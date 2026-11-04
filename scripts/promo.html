@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agent Meter — macOS Screen Studio Showcase</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", sans-serif;
+    --font-mono: "SF Mono", "JetBrains Mono", "Menlo", monospace;
+    --am-surface: #F7F7F6;
+    --am-card: #FFFFFF;
+    --am-well: #F6F5F2;
+    --am-track: #E9E7E2;
+    --am-ink: #17181A;
+    --am-ink2: #5C5B56;
+    --am-ink3: #85847E;
+    --am-border: rgba(23, 24, 26, 0.075);
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background: #0A0B0E;
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    gap: 16px;
+  }
+
+  body.clean-mode {
+    background: transparent;
+    padding: 0;
+    min-height: 0;
+    display: block;
+  }
+  body.clean-mode .controls {
+    display: none !important;
+  }
+
+  /* ==========================================================================
+     SCREEN STUDIO VIEWPORT (1040 x 600)
+     ========================================================================== */
+  .viewport {
+    position: relative;
+    width: 1040px;
+    height: 600px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.12);
+    background: #0D1017;
+  }
+  body.clean-mode .viewport {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  }
+
+  .desktop-camera {
+    position: absolute;
+    inset: 0;
+    transform-origin: 50% 50%;
+    will-change: transform;
+  }
+
+  /* macOS Sequoia / Sonoma Rich Aurora Wallpaper */
+  .macos-wallpaper {
+    position: absolute;
+    inset: -40px;
+    background:
+      radial-gradient(circle at 18% 22%, rgba(56, 189, 248, 0.42) 0%, transparent 45%),
+      radial-gradient(circle at 82% 28%, rgba(99, 102, 241, 0.48) 0%, transparent 50%),
+      radial-gradient(circle at 72% 82%, rgba(244, 114, 182, 0.32) 0%, transparent 48%),
+      radial-gradient(circle at 26% 78%, rgba(16, 185, 129, 0.28) 0%, transparent 46%),
+      linear-gradient(135deg, #0F172A 0%, #1E1B4B 48%, #0F172A 100%);
+    filter: saturate(1.15);
+  }
+
+  /* ==========================================================================
+     AUTHENTIC MACOS TOP MENU BAR
+     ========================================================================== */
+  .macos-menubar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 28px;
+    background: rgba(20, 24, 38, 0.58);
+    backdrop-filter: blur(24px) saturate(180%);
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.14);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 12.5px;
+    z-index: 50;
+  }
+
+  .mb-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .mb-apple {
+    font-size: 14px;
+    line-height: 1;
+  }
+  .mb-app-name {
+    font-weight: 700;
+  }
+  .mb-menu-item {
+    color: rgba(255, 255, 255, 0.78);
+    font-weight: 400;
+  }
+
+  .mb-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .mb-agentmeter-btn {
+    position: relative;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .mb-agentmeter-btn.active {
+    background: rgba(255, 255, 255, 0.22);
+  }
+  .mb-badge-dot {
+    width: 6.5px;
+    height: 6.5px;
+    border-radius: 50%;
+    background: #FF9E1F;
+    box-shadow: 0 0 8px rgba(255, 158, 31, 0.85);
+  }
+  .mb-badge-dot.completed {
+    background: #FF3870;
+    box-shadow: 0 0 8px rgba(255, 56, 112, 0.85);
+  }
+
+  /* ==========================================================================
+     REALISTIC REX TERMINAL WINDOWS ON MACOS DESKTOP
+     ========================================================================== */
+  .rex-win {
+    position: absolute;
+    border-radius: 12px;
+    background: #101217;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .rex-win.inactive {
+    filter: brightness(0.84);
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.4);
+  }
+  .rex-win.focused {
+    z-index: 25 !important;
+    filter: brightness(1);
+    border-color: rgba(255, 255, 255, 0.28);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.68), 0 0 0 1px rgba(255, 255, 255, 0.18);
+  }
+
+  .rex-titlebar {
+    height: 36px;
+    background: #181B22;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    display: flex;
+    align-items: center;
+    padding: 0 12px;
+    gap: 12px;
+  }
+  .win-lights {
+    display: flex;
+    gap: 7px;
+  }
+  .win-lights span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+  }
+  .wl-r { background: #FF5F56; }
+  .wl-y { background: #FFBD2E; }
+  .wl-g { background: #27C93F; }
+
+  .rex-tabs {
+    display: flex;
+    gap: 5px;
+    flex: 1;
+  }
+  .rex-tab {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.5);
+    background: rgba(255, 255, 255, 0.04);
+    padding: 4px 10px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .rex-tab.active {
+    color: #FFFFFF;
+    background: #252A36;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .tab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .rex-term-body {
+    padding: 14px 16px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.65;
+    color: #D1D5DB;
+    flex: 1;
+  }
+  .term-prompt-box {
+    margin-top: 8px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.38);
+    color: #FBBF24;
+  }
+
+  /* ==========================================================================
+     REAL AGENT METER POPOVER (ANCHORED UNDER MENU BAR ICON)
+     ========================================================================== */
+  .am-popover {
+    position: absolute;
+    top: 34px;
+    right: 68px;
+    width: 416px;
+    border-radius: 20px;
+    background: var(--am-surface);
+    border: 1px solid rgba(23, 24, 26, 0.12);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55), 0 4px 16px rgba(0, 0, 0, 0.22);
+    padding: 16px 18px 14px;
+    z-index: 45;
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+    transform-origin: top right;
+    pointer-events: none;
+  }
+
+  /* Popover Header */
+  .am-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .am-hdr-left {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .am-logo-box {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #262930, #121419);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+  }
+  .am-hdr-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--am-ink);
+  }
+  .am-hdr-pill {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #FFF0D6;
+    color: #D97706;
+  }
+  .am-hdr-pill.blue {
+    background: #E0EDFF;
+    color: #0D99FF;
+  }
+
+  .am-hdr-btns {
+    display: flex;
+    gap: 7px;
+  }
+  .am-circle-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    border: 1px solid var(--am-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: var(--am-ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  }
+  .am-circle-btn.active {
+    background: #ECEAE4;
+    transform: scale(0.94);
+  }
+
+  /* Section Toolbar: AGENT ACTIVITY + Filter */
+  .am-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 9px;
+    padding: 0 2px;
+  }
+  .am-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--am-ink2);
+    letter-spacing: 0.3px;
+  }
+  .am-pulse-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #F59E0B;
+  }
+  .am-seg-control {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 999px;
+    background: var(--am-track);
+    border: 1px solid var(--am-border);
+    font-size: 9.5px;
+    font-weight: 600;
+  }
+  .am-seg-item {
+    padding: 2.5px 7px;
+    border-radius: 999px;
+    color: var(--am-ink2);
+  }
+  .am-seg-item.active {
+    background: #FFFFFF;
+    color: var(--am-ink);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
+  /* Cards List */
+  .am-list {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .am-list.hidden {
+    display: none;
+  }
+
+  .am-card {
+    position: relative;
+    background: var(--am-card);
+    border-radius: 14px;
+    padding: 11px 13px;
+    border: 1px solid var(--am-border);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.025);
+  }
+  .am-card.needs-input {
+    border-color: rgba(245, 158, 11, 0.55);
+    border-width: 1.2px;
+  }
+  .am-card.hovered {
+    background: #FCFCFB;
+    border-color: rgba(23, 24, 26, 0.18);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+  }
+
+  .am-close-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8.5px;
+    font-weight: 700;
+    color: var(--am-ink2);
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  .am-card.hovered .am-close-badge {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .am-card-hdr {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .am-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .am-rows {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .am-r1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .am-c-title {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--am-ink);
+  }
+  .am-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4.5px;
+    padding: 3px 8.5px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .am-pill.confirm {
+    background: #FFF2DC;
+    color: #D1700F;
+    border: 1px solid rgba(209, 112, 15, 0.25);
+  }
+  .am-pill.done {
+    background: #E6F7EC;
+    color: #1A9456;
+    border: 1px solid rgba(26, 148, 86, 0.22);
+  }
+  .am-pill.running {
+    background: #E6F2FF;
+    color: #0D99FF;
+    border: 1px solid rgba(13, 153, 255, 0.22);
+  }
+  .am-pill-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .am-r2 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10.5px;
+  }
+  .am-sub {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--am-ink2);
+  }
+  .am-telem {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--am-ink2);
+  }
+  .am-bars {
+    display: inline-flex;
+    align-items: center;
+    gap: 1.5px;
+  }
+  .am-bar-seg {
+    width: 2.5px;
+    height: 7.5px;
+    border-radius: 1px;
+    background: rgba(0, 0, 0, 0.11);
+  }
+  .am-bar-seg.on-orange { background: #CC592E; }
+  .am-bar-seg.on-green { background: #148F61; }
+
+  /* Full-Width Terminal Preview Well */
+  .am-well {
+    margin-top: 8px;
+    background: var(--am-well);
+    border-radius: 9px;
+    border: 1px solid var(--am-border);
+    padding: 7px 10px;
+  }
+  .am-well-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+  }
+  .am-well-line-bar {
+    width: 2.5px;
+    height: 15px;
+    border-radius: 1.5px;
+    background: #D1700F;
+    margin-top: 1px;
+    flex-shrink: 0;
+  }
+  .am-well-line-bar.green { background: #1A9456; }
+  .am-well-line-bar.blue { background: #0D99FF; }
+  .am-well-code {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--am-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Inline Prompt Reply inside Terminal Well */
+  .am-reply-row {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--am-border);
+    display: none;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+  .am-reply-row.visible {
+    display: flex;
+  }
+  .am-reply-input {
+    flex: 1;
+    color: var(--am-ink);
+    display: flex;
+    align-items: center;
+  }
+  .am-caret {
+    width: 1.5px;
+    height: 11px;
+    background: #CC592E;
+    margin-left: 1px;
+  }
+  .am-chip {
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.045);
+    border: 1px solid var(--am-border);
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--am-ink2);
+  }
+  .am-chip.send {
+    background: rgba(204, 89, 46, 0.13);
+    border-color: rgba(204, 89, 46, 0.32);
+    color: #CC592E;
+    font-family: var(--font-sans);
+  }
+  .am-chip.send.pressed {
+    background: #CC592E;
+    color: #FFFFFF;
+  }
+
+  /* Inline Approval Dock */
+  .am-approve-row {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .am-approve-row.hidden {
+    display: none;
+  }
+  .am-approve-txt {
+    font-size: 10px;
+    font-weight: 600;
+    color: #B85C0A;
+  }
+  .am-approve-dock {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2.5px;
+    border-radius: 999px;
+    background: var(--am-track);
+    border: 1px solid var(--am-border);
+  }
+  .am-btn-allow {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #E6F7EC;
+    border: 1px solid rgba(15, 128, 61, 0.28);
+    color: #0F803D;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .am-btn-allow.pressed {
+    background: #16A34A;
+    color: #FFFFFF;
+    transform: scale(0.94);
+  }
+  .am-btn-sub {
+    padding: 3px 6.5px;
+    border-radius: 999px;
+    background: #FFFFFF;
+    border: 1px solid var(--am-border);
+    font-size: 9.5px;
+    font-weight: 600;
+    color: var(--am-ink2);
+  }
+
+  /* Quick Launch View inside Popover */
+  .am-quick-launch {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .am-quick-launch.visible {
+    display: flex;
+  }
+  .am-ql-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--am-track);
+  }
+  .am-ql-item {
+    padding: 7px 4px;
+    border-radius: 9px;
+    text-align: center;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--am-ink2);
+  }
+  .am-ql-item.active {
+    background: #FFFFFF;
+    color: #CC592E;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+  .am-ql-ws {
+    background: #FFFFFF;
+    border-radius: 11px;
+    padding: 9px 11px;
+    border: 1px solid var(--am-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .am-ql-ws.clicked {
+    background: #FFF2EC;
+    border-color: rgba(204, 89, 46, 0.45);
+  }
+
+  .am-footer {
+    margin-top: 11px;
+    padding-top: 9px;
+    border-top: 1px solid var(--am-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--am-ink2);
+  }
+
+  /* ==========================================================================
+     MINIMALIST APPLE-STYLE SUBTITLE PILL (BOTTOM CENTER, 1 SHORT LINE)
+     ========================================================================== */
+  .minimal-hud-pill {
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 80;
+    padding: 8px 20px;
+    border-radius: 999px;
+    background: rgba(15, 18, 26, 0.82);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    color: #FFFFFF;
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: -0.1px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    white-space: nowrap;
+  }
+  .hud-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #F43F5E;
+  }
+
+  /* ==========================================================================
+     SMOOTH MACOS CURSOR
+     ========================================================================== */
+  .macos-cursor {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 95;
+    pointer-events: none;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.42));
+  }
+  .cursor-click-ring {
+    position: absolute;
+    top: -12px;
+    left: -12px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    opacity: 0;
+    transform: scale(0.2);
+  }
+
+  /* ==========================================================================
+     PLAYER CONTROLS (FOR LOCAL REVIEW)
+     ========================================================================== */
+  .controls {
+    width: 1040px;
+    background: #16181F;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 9px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #E5E7EB;
+    font-size: 12px;
+  }
+  .ctrl-group {
+    display: flex;
+    gap: 6px;
+  }
+  .c-btn {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #D1D5DB;
+    padding: 5px 10px;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .c-btn.active {
+    background: #0D99FF;
+    border-color: #38BDF8;
+    color: #FFFFFF;
+  }
+</style>
+</head>
+<body>
+
+  <div class="viewport" id="viewport">
+    <div class="desktop-camera" id="camera">
+      <div class="macos-wallpaper"></div>
+
+      <!-- Authentic macOS Top Menu Bar -->
+      <div class="macos-menubar">
+        <div class="mb-left">
+          <span class="mb-apple"></span>
+          <span class="mb-app-name">Rex</span>
+          <span class="mb-menu-item">Shell</span>
+          <span class="mb-menu-item">Window</span>
+          <span class="mb-menu-item">Workspace</span>
+        </div>
+        <div class="mb-right">
+          <div class="mb-agentmeter-btn" id="mbBtn">
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+              <path d="M1.5 2.5L5 6L1.5 9.5" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+              <line x1="7.8" y1="2.5" x2="14" y2="2.5" stroke="#FFFFFF" stroke-width="1.7" stroke-linecap="round"/>
+              <line x1="7.8" y1="6" x2="12.2" y2="6" stroke="rgba(255,255,255,0.82)" stroke-width="1.7" stroke-linecap="round"/>
+              <line x1="7.8" y1="9.5" x2="10.4" y2="9.5" stroke="rgba(255,255,255,0.55)" stroke-width="1.7" stroke-linecap="round"/>
+            </svg>
+            <span class="mb-badge-dot" id="mbDot"></span>
+          </div>
+          <span>Wi-Fi</span>
+          <span>100%</span>
+          <span>Wed 17:42</span>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           DESKTOP REX TERMINAL WINDOWS
+           ================================================================== -->
+
+      <!-- Rex Window 1 (Top-Left: Claude Code) -->
+      <div class="rex-win focused" id="win1" style="top: 58px; left: 46px; width: 490px; height: 280px; z-index: 15;">
+        <div class="rex-titlebar">
+          <div class="win-lights"><span class="wl-r"></span><span class="wl-y"></span><span class="wl-g"></span></div>
+          <div class="rex-tabs">
+            <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>1: migrate-agentmeter</div>
+            <div class="rex-tab">2: logs</div>
+          </div>
+        </div>
+        <div class="rex-term-body" id="win1Body"></div>
+      </div>
+
+      <!-- Rex Window 2 (Bottom-Left: Codex SSH) -->
+      <div class="rex-win inactive" id="win2" style="top: 266px; left: 96px; width: 510px; height: 274px; z-index: 12;">
+        <div class="rex-titlebar">
+          <div class="win-lights"><span class="wl-r"></span><span class="wl-y"></span><span class="wl-g"></span></div>
+          <div class="rex-tabs">
+            <div class="rex-tab active"><span class="tab-dot" style="background:#2EE59D;"></span>1: ssh://gpu-node-02 · Codex</div>
+            <div class="rex-tab">2: htop</div>
+          </div>
+        </div>
+        <div class="rex-term-body" id="win2Body">
+          <div style="color:#9CA3AF;">$ codex --sandbox danger-full-access</div>
+          <div style="color:#2EE59D;">✓ Updated src/scheduler/work_stealing.rs (+64 -22)</div>
+          <div style="color:#38BDF8;">› Running cargo bench --release ... 412 ns/iter</div>
+        </div>
+      </div>
+
+      <!-- Rex Window 3 (Center-Right: Copilot CLI) -->
+      <div class="rex-win inactive" id="win3" style="top: 118px; left: 390px; width: 480px; height: 270px; z-index: 10;">
+        <div class="rex-titlebar">
+          <div class="win-lights"><span class="wl-r"></span><span class="wl-y"></span><span class="wl-g"></span></div>
+          <div class="rex-tabs">
+            <div class="rex-tab active"><span class="tab-dot" style="background:#38BDF8;"></span>1: auth-gateway · Copilot</div>
+          </div>
+        </div>
+        <div class="rex-term-body">
+          <div style="color:#9CA3AF;">$ copilot</div>
+          <div style="color:#FBBF24;">? Apply patch to middleware.ts? (y/N)</div>
+          <div style="color:#6B7280; margin-top:4px;">Waiting for user input...</div>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           AGENT METER POPOVER (DROPS DOWN FROM MENU BAR ICON)
+           ================================================================== -->
+      <div class="am-popover" id="popover">
+        <div class="am-hdr">
+          <div class="am-hdr-left">
+            <div class="am-logo-box">
+              <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+                <path d="M2 2.5L5.5 6L2 9.5" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <line x1="8.5" y1="2.5" x2="14" y2="2.5" stroke="#2EE59D" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="8.5" y1="6" x2="12.5" y2="6" stroke="#3AA9FF" stroke-width="1.8" stroke-linecap="round"/>
+                <line x1="8.5" y1="9.5" x2="10.5" y2="9.5" stroke="#8E95A5" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <span class="am-hdr-title" id="popTitle">Agent Meter</span>
+            <span class="am-hdr-pill" id="popBadge">1 Confirm</span>
+          </div>
+          <div class="am-hdr-btns">
+            <div class="am-circle-btn" id="btnPlus">+</div>
+            <div class="am-circle-btn">⚙︎</div>
+          </div>
+        </div>
+
+        <div class="am-toolbar" id="popToolbar">
+          <div class="am-toolbar-left">
+            <span class="am-pulse-dot"></span>
+            <span>AGENT ACTIVITY</span>
+          </div>
+          <div class="am-seg-control">
+            <span class="am-seg-item active">All 3</span>
+            <span class="am-seg-item">Active 2</span>
+            <span class="am-seg-item">Done 1</span>
+          </div>
+        </div>
+
+        <div class="am-list" id="popList">
+          <!-- Card 1: Claude Code -->
+          <div class="am-card needs-input" id="card1">
+            <div class="am-close-badge">✕</div>
+            <div class="am-card-hdr">
+              <div class="am-icon" style="background:#FFF0E8; color:#CC592E;">✦</div>
+              <div class="am-rows">
+                <div class="am-r1">
+                  <span class="am-c-title">migrate-agentmeter</span>
+                  <span class="am-pill confirm" id="c1Pill">
+                    <span class="am-pill-dot"></span>
+                    <span id="c1PillTxt">Confirm</span>
+                  </span>
+                </div>
+                <div class="am-r2">
+                  <div class="am-sub">
+                    <span style="color:#CC592E; font-weight:600;">Claude Code</span>
+                    <span>·</span>
+                    <span>AgentMeter</span>
+                  </div>
+                  <div class="am-telem">
+                    <span style="color:#148F61;">🔥 4:42</span>
+                    <span>·</span>
+                    <span class="am-bars">
+                      <span class="am-bar-seg on-orange"></span>
+                      <span class="am-bar-seg on-orange"></span>
+                      <span class="am-bar-seg on-orange"></span>
+                      <span class="am-bar-seg"></span>
+                      <span class="am-bar-seg"></span>
+                    </span>
+                    <span>64%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="am-well">
+              <div class="am-well-row">
+                <div class="am-well-line-bar" id="c1Bar"></div>
+                <div class="am-well-code" id="c1Code">⏺ Bash(zsh scripts/build-app.sh) — Allow?</div>
+              </div>
+              <div class="am-reply-row" id="c1ReplyRow">
+                <span style="color:#CC592E; font-weight:700;">❯</span>
+                <div class="am-reply-input" id="c1ReplyInput">
+                  <span style="color:var(--am-ink3);">Reply to Rex…</span>
+                </div>
+                <span class="am-chip">/compact</span>
+                <span class="am-chip send" id="c1Send">Send ⏎</span>
+              </div>
+            </div>
+
+            <div class="am-approve-row" id="c1ApproveRow">
+              <span class="am-approve-txt">● Awaiting confirmation</span>
+              <div class="am-approve-dock">
+                <span class="am-btn-allow" id="c1Allow">Allow ⏎</span>
+                <span class="am-btn-sub">2</span>
+                <span class="am-btn-sub">Deny Esc</span>
+                <span class="am-btn-sub">💬</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Codex CLI -->
+          <div class="am-card" id="card2">
+            <div class="am-close-badge">✕</div>
+            <div class="am-card-hdr">
+              <div class="am-icon" style="background:#EBFBF3; color:#148F61;">❯_</div>
+              <div class="am-rows">
+                <div class="am-r1">
+                  <span class="am-c-title">scheduler-kernel</span>
+                  <span class="am-pill running">
+                    <span class="am-pill-dot"></span>
+                    <span>Running 1:42</span>
+                  </span>
+                </div>
+                <div class="am-r2">
+                  <div class="am-sub">
+                    <span style="color:#148F61; font-weight:600;">Codex CLI</span>
+                    <span>·</span>
+                    <span style="font-family:var(--font-mono); font-size:10px;">⇄ gpu-node-02</span>
+                  </div>
+                  <div class="am-telem">
+                    <span class="am-bars">
+                      <span class="am-bar-seg on-green"></span>
+                      <span class="am-bar-seg on-green"></span>
+                      <span class="am-bar-seg"></span>
+                      <span class="am-bar-seg"></span>
+                      <span class="am-bar-seg"></span>
+                    </span>
+                    <span>38%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="am-well">
+              <div class="am-well-row">
+                <div class="am-well-line-bar blue"></div>
+                <div class="am-well-code">› cargo bench --release ... 412 ns/iter</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 3: Copilot CLI -->
+          <div class="am-card" style="padding: 9px 13px;">
+            <div class="am-card-hdr">
+              <div class="am-icon" style="width:28px; height:28px; background:#EDF4FF; color:#2970E0;">✦</div>
+              <div class="am-rows">
+                <div class="am-r1">
+                  <span class="am-c-title">auth-gateway</span>
+                  <span class="am-pill done">✓ Done</span>
+                </div>
+                <div class="am-r2">
+                  <div class="am-sub">
+                    <span style="color:#2970E0; font-weight:600;">Copilot CLI</span>
+                    <span>·</span>
+                    <span>gateway</span>
+                  </div>
+                  <div class="am-telem">
+                    <span style="color:#148F61;">🔥 3:18</span>
+                    <span>·</span>
+                    <span>22%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Launch View (+) -->
+        <div class="am-quick-launch" id="popLaunch">
+          <div style="font-size:10.5px; font-weight:600; color:var(--am-ink2);">SELECT CLI AGENT</div>
+          <div class="am-ql-grid">
+            <div class="am-ql-item">Codex</div>
+            <div class="am-ql-item active">Claude</div>
+            <div class="am-ql-item">Copilot</div>
+            <div class="am-ql-item">Antigravity</div>
+          </div>
+          <div style="font-size:10.5px; font-weight:600; color:var(--am-ink2); margin-top:2px;">WORKSPACE (CLICK TO LAUNCH IN REX)</div>
+          <div class="am-ql-ws" id="qlWs1">
+            <div>
+              <div style="font-size:12px; font-weight:600; color:var(--am-ink);">AgentMeter</div>
+              <div style="font-family:var(--font-mono); font-size:9.5px; color:var(--am-ink2);">~/code/AgentMeter</div>
+            </div>
+            <span style="font-size:10px; font-weight:600; color:#CC592E; background:#FFF0E8; padding:3.5px 8px; border-radius:999px;">Launch Claude ↗</span>
+          </div>
+          <div class="am-ql-ws">
+            <div>
+              <div style="font-size:12px; font-weight:600; color:var(--am-ink);">scheduler-kernel</div>
+              <div style="font-family:var(--font-mono); font-size:9.5px; color:var(--am-ink2);">~/code/scheduler-kernel</div>
+            </div>
+            <span style="font-size:10px; font-weight:600; color:var(--am-ink2); background:rgba(0,0,0,0.04); padding:3.5px 8px; border-radius:999px;">Launch Claude ↗</span>
+          </div>
+        </div>
+
+        <div class="am-footer">
+          <span>● Monitoring Codex · Claude · Copilot · Antigravity</span>
+          <span>⏻</span>
+        </div>
+      </div>
+
+      <!-- Smooth macOS Pointer -->
+      <div class="macos-cursor" id="cursor">
+        <div class="cursor-click-ring" id="clickRing"></div>
+        <svg width="20" height="26" viewBox="0 0 20 26" fill="none">
+          <path d="M1.5 1.5V21.5L6.5 16.8L10.5 24.5L13.8 22.8L9.8 15.2H16.8L1.5 1.5Z" fill="#17181A" stroke="#FFFFFF" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Single Concise Subtitle Pill at Bottom Center -->
+    <div class="minimal-hud-pill" id="hudPill">
+      <span class="hud-dot" id="hudDot"></span>
+      <span id="hudText">Constantly switching between terminals to check &amp; reply to agents wastes time</span>
+    </div>
+  </div>
+
+  <!-- Local Review Controls -->
+  <div class="controls">
+    <div class="ctrl-group">
+      <button class="c-btn" id="btnPlayPause">⏸ Pause</button>
+      <button class="c-btn" id="btnRestart">↺ Restart</button>
+    </div>
+    <div class="ctrl-group">
+      <button class="c-btn active" data-t="0">1. Terminal Juggling</button>
+      <button class="c-btn" data-t="6.5">2. Menu Bar Preview</button>
+      <button class="c-btn" data-t="11.5">3. Inline Yes/No &amp; Reply</button>
+      <button class="c-btn" data-t="19.5">4. Quick Jump</button>
+      <button class="c-btn" data-t="24.0">5. + New Agent</button>
+    </div>
+    <div class="ctrl-group">
+      <span id="timerTxt" style="font-family:var(--font-mono); color:#9CA3AF;">0.0s / 28.5s</span>
+    </div>
+  </div>
+
+<script>
+  const isClean = location.search.includes('clean=1');
+  if (isClean) {
+    document.body.classList.add('clean-mode');
+  }
+
+  const TOTAL = 28.5;
+  let t = 0;
+  let playing = !location.search.includes('manual=1');
+  let lastNow = performance.now();
+
+  const camera      = document.getElementById('camera');
+  const mbBtn       = document.getElementById('mbBtn');
+  const mbDot       = document.getElementById('mbDot');
+  const win1        = document.getElementById('win1');
+  const win2        = document.getElementById('win2');
+  const win3        = document.getElementById('win3');
+  const win1Body    = document.getElementById('win1Body');
+  const popover     = document.getElementById('popover');
+  const popTitle    = document.getElementById('popTitle');
+  const popBadge    = document.getElementById('popBadge');
+  const popToolbar  = document.getElementById('popToolbar');
+  const popList     = document.getElementById('popList');
+  const popLaunch   = document.getElementById('popLaunch');
+  const btnPlus     = document.getElementById('btnPlus');
+  const card1       = document.getElementById('card1');
+  const card2       = document.getElementById('card2');
+  const c1Pill      = document.getElementById('c1Pill');
+  const c1PillTxt   = document.getElementById('c1PillTxt');
+  const c1Bar       = document.getElementById('c1Bar');
+  const c1Code      = document.getElementById('c1Code');
+  const c1ReplyRow  = document.getElementById('c1ReplyRow');
+  const c1ReplyInput= document.getElementById('c1ReplyInput');
+  const c1Send      = document.getElementById('c1Send');
+  const c1ApproveRow= document.getElementById('c1ApproveRow');
+  const c1Allow     = document.getElementById('c1Allow');
+  const qlWs1       = document.getElementById('qlWs1');
+
+  const cursor      = document.getElementById('cursor');
+  const clickRing   = document.getElementById('clickRing');
+  const hudDot      = document.getElementById('hudDot');
+  const hudText     = document.getElementById('hudText');
+  const timerTxt    = document.getElementById('timerTxt');
+  const navBtns     = document.querySelectorAll('[data-t]');
+
+  function easeInOutCubic(x) {
+    x = Math.max(0, Math.min(1, x));
+    return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  }
+  function easeOutCubic(x) {
+    x = Math.max(0, Math.min(1, x));
+    return 1 - Math.pow(1 - x, 3);
+  }
+
+  function interpKeyframes(kf, time, prop) {
+    if (time <= kf[0].t) return kf[0][prop];
+    if (time >= kf[kf.length - 1].t) return kf[kf.length - 1][prop];
+    for (let i = 0; i < kf.length - 1; i++) {
+      const a = kf[i], b = kf[i + 1];
+      if (time >= a.t && time <= b.t) {
+        const span = b.t - a.t;
+        if (span <= 0.0001) return b[prop];
+        const p = easeInOutCubic((time - a.t) / span);
+        return a[prop] + (b[prop] - a[prop]) * p;
+      }
+    }
+    return kf[kf.length - 1][prop];
+  }
+
+  // Cursor trajectory keyframes
+  const CURSOR_KF = [
+    { t: 0.0,  x: 260, y: 170 },
+    { t: 1.2,  x: 260, y: 170 },
+    { t: 1.85, x: 610, y: 220 },
+    { t: 2.8,  x: 610, y: 220 },
+    { t: 3.45, x: 290, y: 390 },
+    { t: 4.4,  x: 290, y: 390 },
+    { t: 5.05, x: 230, y: 160 },
+    { t: 6.3,  x: 230, y: 160 },
+    { t: 7.0,  x: 840, y: 14  },
+    { t: 8.3,  x: 840, y: 14  },
+    { t: 9.1,  x: 780, y: 195 },
+    { t: 11.4, x: 780, y: 195 },
+    { t: 12.1, x: 778, y: 255 },
+    { t: 14.8, x: 778, y: 255 },
+    { t: 15.4, x: 680, y: 244 },
+    { t: 17.3, x: 680, y: 244 },
+    { t: 17.85,x: 935, y: 244 },
+    { t: 19.3, x: 935, y: 244 },
+    { t: 20.1, x: 740, y: 315 },
+    { t: 21.5, x: 740, y: 315 },
+    { t: 22.3, x: 340, y: 380 },
+    { t: 23.8, x: 340, y: 380 },
+    { t: 24.6, x: 906, y: 64  },
+    { t: 25.5, x: 906, y: 64  },
+    { t: 26.2, x: 890, y: 212 },
+    { t: 28.5, x: 890, y: 212 }
+  ];
+
+  // Camera zoom & origin keyframes
+  const CAM_KF = [
+    { t: 0.0,  s: 1.00, ox: 50, oy: 50 },
+    { t: 6.3,  s: 1.00, ox: 50, oy: 50 },
+    { t: 7.2,  s: 1.22, ox: 82, oy: 18 },
+    { t: 8.3,  s: 1.22, ox: 82, oy: 18 },
+    { t: 9.2,  s: 1.25, ox: 82, oy: 36 },
+    { t: 21.3, s: 1.25, ox: 82, oy: 36 },
+    { t: 22.1, s: 1.06, ox: 35, oy: 65 },
+    { t: 23.8, s: 1.06, ox: 35, oy: 65 },
+    { t: 24.7, s: 1.25, ox: 82, oy: 28 },
+    { t: 28.5, s: 1.25, ox: 82, oy: 28 }
+  ];
+
+  const CLICK_TIMES = [1.85, 3.45, 5.05, 7.0, 13.0, 15.4, 17.85, 21.2, 25.3, 26.8];
+
+  function focusWin(activeWin) {
+    [win1, win2, win3].forEach(w => {
+      if (w === activeWin) {
+        w.classList.remove('inactive');
+        w.classList.add('focused');
+      } else {
+        w.classList.remove('focused');
+        w.classList.add('inactive');
+      }
+    });
+  }
+
+  window.renderAtTime = function(time) {
+    t = time;
+
+    // 1. Cursor position
+    const cx = interpKeyframes(CURSOR_KF, time, 'x');
+    const cy = interpKeyframes(CURSOR_KF, time, 'y');
+    cursor.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px)`;
+
+    // 2. Click ripple
+    let ringOp = 0;
+    let ringScale = 0.2;
+    for (const tc of CLICK_TIMES) {
+      const dt = time - tc;
+      if (dt >= 0 && dt <= 0.45) {
+        const p = dt / 0.45;
+        ringOp = 0.95 * (1 - p);
+        ringScale = 0.2 + 1.65 * easeOutCubic(p);
+        break;
+      }
+    }
+    clickRing.style.opacity = ringOp.toFixed(3);
+    clickRing.style.transform = `scale(${ringScale.toFixed(3)})`;
+
+    // 3. Camera zoom & origin
+    const cs  = interpKeyframes(CAM_KF, time, 's');
+    const cox = interpKeyframes(CAM_KF, time, 'ox');
+    const coy = interpKeyframes(CAM_KF, time, 'oy');
+    camera.style.transformOrigin = `${cox.toFixed(1)}% ${coy.toFixed(1)}%`;
+    camera.style.transform = `scale(${cs.toFixed(4)})`;
+
+    // 4. Desktop windows focus state
+    if (time < 1.85) focusWin(win1);
+    else if (time < 3.45) focusWin(win3);
+    else if (time < 5.05) focusWin(win2);
+    else if (time < 21.4) focusWin(win1);
+    else focusWin(win2);
+
+    win2.style.borderColor = (time >= 21.4 && time < 24.0) ? '#2EE59D' : '';
+
+    // 5. Subtitle HUD Pill
+    if (time < 6.5) {
+      hudDot.style.background = '#F43F5E';
+      hudText.textContent = 'Constantly switching between terminals to check & reply to agents wastes time';
+    } else if (time < 11.5) {
+      hudDot.style.background = '#0D99FF';
+      hudText.textContent = 'Manage all agents from the macOS menu bar — live output, warm cache & context %';
+    } else if (time < 15.0) {
+      hudDot.style.background = '#F59E0B';
+      hudText.textContent = 'Reply Yes / No inline without switching windows';
+    } else if (time < 19.5) {
+      hudDot.style.background = '#E05A2B';
+      hudText.textContent = 'Send follow-up prompts or /compact directly from the card';
+    } else if (time < 24.0) {
+      hudDot.style.background = '#10B981';
+      hudText.textContent = 'Click any session (or press ⌥⏎) to jump straight to its Rex terminal';
+    } else {
+      hudDot.style.background = '#8B5CF6';
+      hudText.textContent = 'Start a new CLI agent session in any workspace with one click';
+    }
+
+    // 6. Popover open/close interpolation
+    let popProgress = 0;
+    if (time >= 7.05 && time < 21.35) {
+      if (time < 7.30) popProgress = easeOutCubic((time - 7.05) / 0.25);
+      else popProgress = 1;
+    } else if (time >= 21.35 && time < 21.60) {
+      popProgress = 1 - easeOutCubic((time - 21.35) / 0.25);
+    } else if (time >= 24.10) {
+      if (time < 24.35) popProgress = easeOutCubic((time - 24.10) / 0.25);
+      else popProgress = 1;
+    }
+    popover.style.opacity = popProgress.toFixed(3);
+    const popY = -8 * (1 - popProgress);
+    const popSc = 0.96 + 0.04 * popProgress;
+    popover.style.transform = `translateY(${popY.toFixed(1)}px) scale(${popSc.toFixed(3)})`;
+    mbBtn.classList.toggle('active', popProgress > 0.5);
+
+    // 7. Menu bar dot & Card 1 state (Confirm -> Approved Done -> Inline Typing -> Running)
+    if (time < 13.2) {
+      mbDot.className = 'mb-badge-dot';
+      popBadge.textContent = '1 Confirm';
+      popBadge.className = 'am-hdr-pill';
+      card1.className = 'am-card needs-input';
+      c1Pill.className = 'am-pill confirm';
+      c1PillTxt.textContent = 'Confirm';
+      c1Bar.className = 'am-well-line-bar';
+      c1Code.textContent = '⏺ Bash(zsh scripts/build-app.sh) — Allow?';
+      c1ReplyRow.classList.remove('visible');
+      c1ApproveRow.classList.remove('hidden');
+      c1Allow.classList.toggle('pressed', time >= 13.0 && time < 13.2);
+
+      win1Body.innerHTML = `
+        <div style="color:#9CA3AF;">$ claude</div>
+        <div style="color:#F28B50; margin-top:4px;">⏺ Bash(zsh scripts/build-app.sh)</div>
+        <div class="term-prompt-box">
+          <div style="font-weight:700;">Do you want to proceed?</div>
+          <div>❯ 1. Yes, allow (⏎) &nbsp;&nbsp; 2. Always &nbsp;&nbsp; 3. No (Esc)</div>
+        </div>
+      `;
+    } else if (time < 18.05) {
+      mbDot.className = 'mb-badge-dot completed';
+      popBadge.textContent = '1 Done';
+      popBadge.className = 'am-hdr-pill blue';
+      card1.className = 'am-card hovered';
+      c1Pill.className = 'am-pill done';
+      c1PillTxt.textContent = 'Done';
+      c1Bar.className = 'am-well-line-bar green';
+      c1Code.textContent = '✓ Built: build/Agent Meter.app (1.8s)';
+      c1ApproveRow.classList.add('hidden');
+      c1ReplyRow.classList.add('visible');
+
+      const msg = "run tests and commit";
+      if (time < 15.5) {
+        c1ReplyInput.innerHTML = `<span style="color:var(--am-ink3);">Reply to Rex…</span>`;
+      } else {
+        const count = Math.min(msg.length, Math.max(1, Math.floor(((time - 15.5) / 1.55) * msg.length)));
+        c1ReplyInput.innerHTML = `<span>${msg.slice(0, count)}</span><span class="am-caret"></span>`;
+      }
+      c1Send.classList.toggle('pressed', time >= 17.85 && time < 18.05);
+
+      win1Body.innerHTML = `
+        <div style="color:#9CA3AF;">$ claude</div>
+        <div style="color:#2EE59D; margin-top:4px;">✓ Approved from Agent Meter menu bar (⏎)</div>
+        <div style="color:#D1D5DB;">[4/4] Linking AgentMeter (release)...</div>
+        <div style="color:#2EE59D; font-weight:700;">✓ Built: build/Agent Meter.app</div>
+      `;
+    } else {
+      mbDot.className = 'mb-badge-dot';
+      popBadge.textContent = '2 Running';
+      popBadge.className = 'am-hdr-pill blue';
+      card1.className = 'am-card';
+      c1Pill.className = 'am-pill running';
+      c1PillTxt.textContent = 'Running 0:02';
+      c1Bar.className = 'am-well-line-bar blue';
+      c1Code.textContent = '› run tests and commit';
+      c1ApproveRow.classList.add('hidden');
+      c1ReplyRow.classList.remove('visible');
+
+      win1Body.innerHTML = `
+        <div style="color:#9CA3AF;">$ claude</div>
+        <div style="color:#2EE59D; margin-top:4px;">✓ Built: build/Agent Meter.app</div>
+        <div style="color:#F28B50; margin-top:4px;">❯ run tests and commit</div>
+      `;
+    }
+
+    // 8. Card 2 Hover & Quick Launch View (Step 4)
+    card2.classList.toggle('hovered', time >= 19.8 && time < 21.5);
+    btnPlus.classList.toggle('active', time >= 25.25 && time < 25.5);
+
+    const inLaunchView = time >= 25.5;
+    popTitle.textContent = inLaunchView ? 'New Agent Session' : 'Agent Meter';
+    popBadge.style.display = inLaunchView ? 'none' : '';
+    popToolbar.style.display = inLaunchView ? 'none' : 'flex';
+    popList.classList.toggle('hidden', inLaunchView);
+    popLaunch.classList.toggle('visible', inLaunchView);
+    qlWs1.classList.toggle('clicked', time >= 26.8);
+
+    // 9. Controls UI update
+    let activeNav = 0;
+    if (time >= 24.0) activeNav = 4;
+    else if (time >= 19.5) activeNav = 3;
+    else if (time >= 11.5) activeNav = 2;
+    else if (time >= 6.5) activeNav = 1;
+    navBtns.forEach((b, idx) => b.classList.toggle('active', idx === activeNav));
+    timerTxt.textContent = `${time.toFixed(1)}s / ${TOTAL.toFixed(1)}s`;
+  };
+
+  function loop(now) {
+    const dt = (now - lastNow) / 1000;
+    lastNow = now;
+    if (playing) {
+      let next = t + dt;
+      if (next >= TOTAL) next = 0;
+      window.renderAtTime(next);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  const btnPlayPause = document.getElementById('btnPlayPause');
+  btnPlayPause.onclick = () => {
+    playing = !playing;
+    btnPlayPause.textContent = playing ? '⏸ Pause' : '▶ Play';
+  };
+  document.getElementById('btnRestart').onclick = () => window.renderAtTime(0);
+
+  navBtns.forEach(btn => {
+    btn.onclick = () => {
+      const target = parseFloat(btn.getAttribute('data-t'));
+      window.renderAtTime(target);
+    };
+  });
+
+  window.renderAtTime(0);
+  if (!location.search.includes('manual=1')) {
+    requestAnimationFrame(loop);
+  }
+</script>
+</body>
+</html>
