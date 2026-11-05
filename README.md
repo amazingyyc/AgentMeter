@@ -12,7 +12,7 @@
   <img src="./Resources/demo.webp" width="100%" alt="Agent Meter Interactive Demo" />
 </p>
 
-A native macOS menu bar CLI Agent monitor (**Rex terminal only**). It detects active **Claude Code**, **Codex CLI**, **Copilot CLI**, and **Antigravity CLI** sessions running inside **Rex** in real time, letting you manage all agents from the menu bar without breaking your coding flow.
+A native macOS menu bar CLI Agent monitor (**[Rex](https://www.superlogical.com/) terminal only**). It detects active **Claude Code**, **Codex CLI**, **Copilot CLI**, and **Antigravity CLI** sessions running inside **[Rex](https://www.superlogical.com/)** in real time, letting you manage all agents from the menu bar without breaking your coding flow.
 
 ## Why Agent Meter?
 
@@ -33,7 +33,7 @@ A native macOS menu bar CLI Agent monitor (**Rex terminal only**). It detects ac
 ## Requirements
 
 - macOS 14.0+
-- **Rex** terminal (Rex only; other terminal emulators are not supported)
+- **[Rex](https://www.superlogical.com/)** terminal (Rex only; other terminal emulators are not supported)
 - Swift 6.0+ (Xcode Command Line Tools)
 
 ## Build & Run
@@ -63,4 +63,5 @@ open -n "build/Agent Meter.app" --args --demo --show-panel
 - [x] **Prompt Cache Warm Timer**: Display a 5-minute warm cache countdown on newly completed/idle sessions (Claude Code, Codex CLI, etc.) so you can follow up before prompt cache eviction causes slow TTFT and costly token re-prefills.
 - [x] **Launch at Login**: Automatically start Agent Meter in the background when logging into macOS.
 - [x] **Historical Session Resume**: Browse, filter, and search local historical sessions across Claude Code, Codex CLI, Copilot CLI, and Antigravity, and resume any conversation in a new Rex tab with one click.
+- [x] **Git Diff Stat Badge (`+64 -22`)**: Display live working-tree line additions and deletions on each session card so you can see how much code an agent has modified at a glance.
 

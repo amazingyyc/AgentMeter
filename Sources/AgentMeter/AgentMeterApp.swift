@@ -135,8 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let res = await tracker.poll()
                 for item in res.items {
                     let ctxStr = item.contextPercentUsed.map { "\($0)%" } ?? "-"
-                let previewStr = item.terminalPreviewLines.joined(separator: " // ")
-                print("DUMP_ITEM | id=\(item.id) | family=\(item.family.rawValue) | status=\(item.status.rawValue) | pid=\(item.pid ?? 0) | ctx=\(ctxStr) | title=\(item.title) | subtitle=\(item.subtitleText()) | preview=\(previewStr)")
+                    let diffStr = item.gitDiff.map { "+\($0.insertions)/-\($0.deletions)(\($0.changedFiles)f)" } ?? "-"
+                    let previewStr = item.terminalPreviewLines.joined(separator: " // ")
+                    print("DUMP_ITEM | id=\(item.id) | family=\(item.family.rawValue) | status=\(item.status.rawValue) | pid=\(item.pid ?? 0) | ctx=\(ctxStr) | diff=\(diffStr) | title=\(item.title) | subtitle=\(item.subtitleText()) | preview=\(previewStr)")
                 }
                 NSApplication.shared.terminate(nil)
             }

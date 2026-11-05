@@ -64,8 +64,8 @@ enum AgentFamily: String, CaseIterable, Identifiable, Sendable {
                 : Color(red: 0.16, green: 0.44, blue: 0.88)
         case .antigravity:
             return dark
-                ? Color(red: 0.96, green: 0.74, blue: 0.40)
-                : Color(red: 0.76, green: 0.42, blue: 0.10)
+                ? Color(red: 0.75, green: 0.54, blue: 0.99)
+                : Color(red: 0.49, green: 0.23, blue: 0.88)
         }
     }
 
@@ -85,8 +85,8 @@ enum AgentFamily: String, CaseIterable, Identifiable, Sendable {
                 : (highlighted ? Color(red: 0.85, green: 0.92, blue: 0.99) : Color(red: 0.91, green: 0.95, blue: 1.00))
         case .antigravity:
             return dark
-                ? (highlighted ? Color(red: 0.32, green: 0.23, blue: 0.12) : Color(red: 0.26, green: 0.19, blue: 0.11))
-                : (highlighted ? Color(red: 0.99, green: 0.92, blue: 0.82) : Color(red: 1.00, green: 0.95, blue: 0.88))
+                ? (highlighted ? Color(red: 0.26, green: 0.17, blue: 0.38) : Color(red: 0.20, green: 0.14, blue: 0.30))
+                : (highlighted ? Color(red: 0.92, green: 0.87, blue: 0.99) : Color(red: 0.95, green: 0.92, blue: 1.00))
         }
     }
 }
@@ -108,6 +108,16 @@ struct RexPaneLocation: Sendable, Equatable {
     let sessionID: String
     let windowID: String?
     let blockID: String
+}
+
+struct GitDiffSummary: Equatable, Sendable {
+    let changedFiles: Int
+    let insertions: Int
+    let deletions: Int
+
+    var isEmpty: Bool {
+        changedFiles == 0 && insertions == 0 && deletions == 0
+    }
 }
 
 struct AgentHistorySessionItem: Identifiable, Equatable, Sendable {
@@ -140,6 +150,7 @@ struct AgentActivityItem: Identifiable, Equatable, Sendable {
     var rexPane: RexPaneLocation?
     var terminalPreviewLines: [String] = []
     var contextPercentUsed: Int? = nil
+    var gitDiff: GitDiffSummary? = nil
 
     static let promptCacheWarmTTLSeconds: Int = 300
 
@@ -242,6 +253,7 @@ final class AgentActivityTracker {
                         id: "demo-codex",
                         family: .codex,
                         workspace: "AgentMeter",
+                        cwdPath: "/Users/yyc/code/AgentMeter",
                         title: en ? "Build AgentMeter menu bar monitor & Rex jump" : "创建 AgentMeter 菜单栏监控与 Rex 跳转支持",
                         status: .working,
                         isUnreadCompletion: false,
@@ -255,12 +267,14 @@ final class AgentActivityTracker {
                             "  swift build --configuration release",
                             "  Compiling AgentMeter AgentMonitor.swift",
                         ],
-                        contextPercentUsed: 18
+                        contextPercentUsed: 18,
+                        gitDiff: GitDiffSummary(changedFiles: 4, insertions: 148, deletions: 36)
                     ),
                     AgentActivityItem(
                         id: "demo-claude",
                         family: .claude,
                         workspace: "AgentMeter",
+                        cwdPath: "/Users/yyc/code/AgentMeter",
                         title: en ? "Claude Code CLI integration & live tracking" : "Claude Code CLI 适配与实时状态追踪",
                         status: .needsInput,
                         isUnreadCompletion: true,
@@ -276,12 +290,14 @@ final class AgentActivityTracker {
                             "  2. Yes, and don't ask again for this session",
                             "  3. No, cancel (Esc)",
                         ],
-                        contextPercentUsed: 34
+                        contextPercentUsed: 34,
+                        gitDiff: GitDiffSummary(changedFiles: 2, insertions: 64, deletions: 18)
                     ),
                     AgentActivityItem(
                         id: "demo-copilot",
                         family: .copilot,
                         workspace: "Orimaton",
+                        cwdPath: "/Users/yyc/code/Orimaton",
                         title: "Fix Codex Stream Disconnection",
                         status: .completed,
                         isUnreadCompletion: true,
@@ -295,12 +311,14 @@ final class AgentActivityTracker {
                             "  Updated ~/.codex/copilot-bridge.py (+42 -9)",
                             "  Worked for 42s · All checks passed",
                         ],
-                        contextPercentUsed: 12
+                        contextPercentUsed: 12,
+                        gitDiff: GitDiffSummary(changedFiles: 1, insertions: 42, deletions: 9)
                     ),
                     AgentActivityItem(
                         id: "demo-agy",
                         family: .antigravity,
                         workspace: "Papers",
+                        cwdPath: "/Users/yyc/code/Papers",
                         title: en ? "Embodied AI simulation benchmark & asset survey" : "具身智能行业仿真验证与开源仿真资产调研",
                         status: .idle,
                         isUnreadCompletion: false,
@@ -694,6 +712,23 @@ final class AgentActivityTracker {
         private var codexRolloutCache: [String: (modDate: Date, info: CodexSessionInfo)] = [:]
         private var claudeTranscriptCache: [String: (modDate: Date, summary: ClaudeTranscriptSummary)] = [:]
         private var claudeHistoryCache: (modDate: Date, bySession: [String: String])?
+        private var gitDiffCache: [String: (timestamp: TimeInterval, summary: GitDiffSummary?)] = [:]
+
+        func cachedGitDiff(for gitRoot: String, now: TimeInterval, ttl: TimeInterval = 3.5) -> (hit: Bool, summary: GitDiffSummary?) {
+            lock.lock()
+            defer { lock.unlock() }
+            if let entry = gitDiffCache[gitRoot], now - entry.timestamp < ttl {
+                return (true, entry.summary)
+            }
+            return (false, nil)
+        }
+
+        func setCachedGitDiff(_ summary: GitDiffSummary?, for gitRoot: String, now: TimeInterval) {
+            lock.lock()
+            defer { lock.unlock() }
+            if gitDiffCache.count > 64 { gitDiffCache.removeAll(keepingCapacity: true) }
+            gitDiffCache[gitRoot] = (now, summary)
+        }
 
         func computeCPUPercent(pid: Int32, totalTimeNs: UInt64, now: TimeInterval) -> Double {
             lock.lock()
@@ -938,9 +973,96 @@ final class AgentActivityTracker {
             if results[idx].terminalPreviewLines.isEmpty, let detail = results[idx].detail, !detail.isEmpty {
                 results[idx].terminalPreviewLines = [detail]
             }
+            if results[idx].gitDiff == nil {
+                if results[idx].sshTarget == nil, !results[idx].cwdPath.isEmpty {
+                    results[idx].gitDiff = inspectGitDiff(cwdPath: results[idx].cwdPath, homePath: home.path)
+                }
+                if results[idx].gitDiff == nil {
+                    results[idx].gitDiff = extractDiffFromPreviewLines(results[idx].terminalPreviewLines)
+                }
+            }
         }
 
         return results
+    }
+
+    // MARK: - Git Working Tree Diff Stat Inspection
+
+    private nonisolated static func resolveGitRepositoryRoot(for cwdPath: String, homePath: String) -> String? {
+        let trimmed = cwdPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "/" else { return nil }
+        var current = URL(fileURLWithPath: trimmed).standardizedFileURL.path
+        let fm = FileManager.default
+        var depth = 0
+        while !current.isEmpty && current != "/" && current != homePath && depth < 12 {
+            let dotGit = (current as NSString).appendingPathComponent(".git")
+            if fm.fileExists(atPath: dotGit) {
+                return current
+            }
+            let parent = (current as NSString).deletingLastPathComponent
+            if parent == current { break }
+            current = parent
+            depth += 1
+        }
+        return nil
+    }
+
+    private nonisolated static func inspectGitDiff(cwdPath: String, homePath: String) -> GitDiffSummary? {
+        guard let gitRoot = resolveGitRepositoryRoot(for: cwdPath, homePath: homePath) else {
+            return nil
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        let cached = DiscoveryCache.shared.cachedGitDiff(for: gitRoot, now: now)
+        if cached.hit {
+            return cached.summary
+        }
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        proc.arguments = ["--no-optional-locks", "-C", gitRoot, "diff", "HEAD", "--numstat"]
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = FileHandle.nullDevice
+
+        var summary: GitDiffSummary? = nil
+        do {
+            try proc.run()
+            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+            proc.waitUntilExit()
+            if proc.terminationStatus == 0, let text = String(data: data, encoding: .utf8) {
+                var files = 0
+                var ins = 0
+                var del = 0
+                for line in text.split(separator: "\n") {
+                    let parts = line.split(separator: "\t", maxSplits: 2)
+                    guard parts.count >= 3 else { continue }
+                    files += 1
+                    if let a = Int(parts[0]) { ins += a }
+                    if let d = Int(parts[1]) { del += d }
+                }
+                let candidate = GitDiffSummary(changedFiles: files, insertions: ins, deletions: del)
+                if !candidate.isEmpty {
+                    summary = candidate
+                }
+            }
+        } catch {
+            summary = nil
+        }
+
+        DiscoveryCache.shared.setCachedGitDiff(summary, for: gitRoot, now: now)
+        return summary
+    }
+
+    private nonisolated static func extractDiffFromPreviewLines(_ lines: [String]) -> GitDiffSummary? {
+        for line in lines.reversed() {
+            guard let plusIdx = line.range(of: "\\+(\\d+)\\s+-(\\d+)", options: .regularExpression) else { continue }
+            let snippet = String(line[plusIdx])
+            let nums = snippet.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+            if nums.count >= 2 && (nums[0] > 0 || nums[1] > 0) {
+                return GitDiffSummary(changedFiles: 1, insertions: nums[0], deletions: nums[1])
+            }
+        }
+        return nil
     }
 
     // MARK: - Process Table & CWD Inspection

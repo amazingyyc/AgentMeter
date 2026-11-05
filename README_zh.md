@@ -12,7 +12,7 @@
   <img src="./Resources/demo.webp" width="100%" alt="Agent Meter 动态演示" />
 </p>
 
-原生 macOS 菜单栏 CLI Agent 监控工具（**仅支持 Rex 终端**），实时检测在 **Rex** 中运行的 **Claude Code**、**Codex CLI**、**Copilot CLI** 与 **Antigravity CLI** 会话状态，让你无需离开当前工作窗口即可在菜单栏掌控所有 Agent。
+原生 macOS 菜单栏 CLI Agent 监控工具（**仅支持 [Rex](https://www.superlogical.com/) 终端**），实时检测在 **[Rex](https://www.superlogical.com/)** 中运行的 **Claude Code**、**Codex CLI**、**Copilot CLI** 与 **Antigravity CLI** 会话状态，让你无需离开当前工作窗口即可在菜单栏掌控所有 Agent。
 
 ## 为什么使用 Agent Meter？
 
@@ -33,7 +33,7 @@
 ## 环境要求
 
 - macOS 14.0+
-- **Rex** 终端（仅支持 Rex，不支持其他终端应用）
+- **[Rex](https://www.superlogical.com/)** 终端（仅支持 Rex，不支持其他终端应用）
 - Swift 6.0+（Xcode Command Line Tools）
 
 ## 编译与运行
@@ -63,4 +63,5 @@ open -n "build/Agent Meter.app" --args --demo --show-panel
 - [x] **Prompt Cache 热缓存保温倒计时（Prompt Cache Warm Timer）**：针对刚完成或空闲的会话（Claude Code、Codex CLI 等）提供 5 分钟热缓存倒计时提醒，避免闲置超时导致缓存失效（Cache Miss）、响应变慢与额度额外消耗。
 - [x] **开机自动启动（Launch at Login）**：支持登录 macOS 时在后台自动启动 Agent Meter。
 - [x] **历史会话搜索与一键恢复（Historical Session Resume）**：自动扫描并检索本机 Claude Code、Codex CLI、Copilot CLI 与 Antigravity 的历史会话记录，支持在 Rex 新建 Tab 中一键恢复任意历史对话。
+- [x] **卡片 Git 变更微章（`+64 -22` Dirty Files Badge）**：在会话卡片上实时展示当前工作区的代码增删行数（`+N -M`）与变更文件数，一眼看清每个 Agent 改了多少代码。
 
