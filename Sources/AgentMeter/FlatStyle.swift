@@ -381,29 +381,45 @@ struct PointingHandCursorOverlay: NSViewRepresentable {
     }
 }
 
-/// Synchronizes the native window and SwiftUI appearance and hides MenuBarExtra's internal NSVisualEffectView backdrop.
+enum PanelKeyNavigationCommand {
+    case moveUp
+    case moveDown
+    case moveLeft
+    case moveRight
+    case confirmSelection
+    case openInlineReply
+    case escape
+}
+
+/// Synchronizes the native window and SwiftUI appearance, hides MenuBarExtra's internal NSVisualEffectView backdrop,
+/// and provides keyboard navigation monitoring while the panel is open.
 struct PanelWindowMask: NSViewRepresentable {
     let appearanceMode: AppearanceMode
     var onVisibilityChange: (@MainActor (Bool) -> Void)? = nil
+    var onKeyCommand: (@MainActor (PanelKeyNavigationCommand) -> Bool)? = nil
 
     func makeNSView(context: Context) -> MaskView {
         let view = MaskView(frame: .zero)
         view.appearanceMode = appearanceMode
         view.onVisibilityChange = onVisibilityChange
+        view.onKeyCommand = onKeyCommand
         return view
     }
 
     func updateNSView(_ view: MaskView, context: Context) {
         view.appearanceMode = appearanceMode
         view.onVisibilityChange = onVisibilityChange
+        view.onKeyCommand = onKeyCommand
         view.updateWindow()
     }
 
     final class MaskView: NSView {
         var appearanceMode: AppearanceMode = .automatic
         var onVisibilityChange: (@MainActor (Bool) -> Void)?
+        var onKeyCommand: (@MainActor (PanelKeyNavigationCommand) -> Bool)?
         private var updatingWindow = false
         private var lastWindowVisible = false
+        private var keyMonitor: Any?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -414,9 +430,12 @@ struct PanelWindowMask: NSViewRepresentable {
                              NSWindow.willCloseNotification, NSWindow.didChangeOcclusionStateNotification] {
                     NotificationCenter.default.addObserver(self, selector: #selector(windowUpdated), name: name, object: window)
                 }
-            } else if lastWindowVisible {
-                lastWindowVisible = false
-                onVisibilityChange?(false)
+            } else {
+                removeKeyMonitor()
+                if lastWindowVisible {
+                    lastWindowVisible = false
+                    onVisibilityChange?(false)
+                }
             }
             updateWindow()
         }
@@ -440,10 +459,104 @@ struct PanelWindowMask: NSViewRepresentable {
 
         @objc private func windowUpdated(_ notification: Notification) { updateWindow() }
 
+        private func installKeyMonitor() {
+            guard keyMonitor == nil else { return }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self else { return event }
+                let consumed = MainActor.assumeIsolated {
+                    self.handleKeyEvent(event)
+                }
+                return consumed ? nil : event
+            }
+        }
+
+        private func removeKeyMonitor() {
+            if let keyMonitor {
+                NSEvent.removeMonitor(keyMonitor)
+                self.keyMonitor = nil
+            }
+        }
+
+        @MainActor
+        private func handleKeyEvent(_ event: NSEvent) -> Bool {
+            guard let window = self.window, window.isVisible else { return false }
+
+            let isEditingText: Bool = {
+                guard let responder = window.firstResponder else { return false }
+                return (responder is NSTextView) || (responder is NSTextField)
+            }()
+
+            let hasMarkedIME: Bool = {
+                if let textView = window.firstResponder as? NSTextView {
+                    return textView.hasMarkedText()
+                }
+                return false
+            }()
+
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let hasCmdOrCtrlOrOpt = !modifiers.intersection([.command, .control, .option]).isEmpty
+
+            if isEditingText {
+                if !hasMarkedIME {
+                    if event.keyCode == 53 { // Escape exits text editing first
+                        window.makeFirstResponder(nil)
+                        _ = onKeyCommand?(.escape)
+                        return true
+                    }
+                    if !hasCmdOrCtrlOrOpt && (event.keyCode == 126 || event.keyCode == 125) {
+                        // Up/Down arrow exits text editing and navigates items
+                        window.makeFirstResponder(nil)
+                        _ = onKeyCommand?(event.keyCode == 126 ? .moveUp : .moveDown)
+                        return true
+                    }
+                }
+                return false
+            }
+
+            guard !hasCmdOrCtrlOrOpt else { return false }
+
+            switch event.keyCode {
+            case 126: // Up arrow
+                return onKeyCommand?(.moveUp) == true
+            case 125: // Down arrow
+                return onKeyCommand?(.moveDown) == true
+            case 123: // Left arrow
+                return onKeyCommand?(.moveLeft) == true
+            case 124: // Right arrow
+                return onKeyCommand?(.moveRight) == true
+            case 36, 76: // Return / Enter
+                return onKeyCommand?(.confirmSelection) == true
+            case 44: // '/' key (without Shift)
+                if !modifiers.contains(.shift) {
+                    return onKeyCommand?(.openInlineReply) == true
+                }
+                return false
+            case 53: // Escape
+                if onKeyCommand?(.escape) == true {
+                    return true
+                } else {
+                    window.orderOut(nil)
+                    return true
+                }
+            default:
+                return false
+            }
+        }
+
         func updateWindow() {
             let isVisible = window?.isVisible == true
             if isVisible != lastWindowVisible {
                 lastWindowVisible = isVisible
+                if isVisible {
+                    installKeyMonitor()
+                    let targetWindow = window
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                        targetWindow?.makeKey()
+                    }
+                } else {
+                    removeKeyMonitor()
+                }
                 onVisibilityChange?(isVisible)
             }
             guard !updatingWindow, let window, let contentView = window.contentView,
@@ -520,6 +633,7 @@ struct InlinePromptTextField: NSViewRepresentable {
         field.cell?.isScrollable = true
         field.onHoverChange = onHoverChange
         field.onFocusChange = onFocusChange
+        field.shouldRequestFocus = requestFocus
         updateAppearance(field, force: true)
         return field
     }
@@ -528,6 +642,7 @@ struct InlinePromptTextField: NSViewRepresentable {
         context.coordinator.parent = self
         nsView.onHoverChange = onHoverChange
         nsView.onFocusChange = onFocusChange
+        nsView.shouldRequestFocus = requestFocus
         updateAppearance(nsView, force: false)
 
         let isEditing: Bool = {
@@ -632,8 +747,21 @@ struct InlinePromptTextField: NSViewRepresentable {
         var onFocusChange: ((Bool) -> Void)?
         var lastDark: Bool?
         var lastPlaceholder: String?
+        var shouldRequestFocus = false
         private var trackingArea: NSTrackingArea?
         private var isMouseInside = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if shouldRequestFocus, let window {
+                DispatchQueue.main.async { [weak self, weak window] in
+                    guard let self, let window, self.shouldRequestFocus else { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                    window.makeKeyAndOrderFront(nil)
+                    window.makeFirstResponder(self)
+                }
+            }
+        }
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
             true

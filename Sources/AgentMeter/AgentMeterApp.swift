@@ -249,9 +249,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func openPanel() {
         DispatchQueue.main.async { [weak self] in
+            NSApplication.shared.activate(ignoringOtherApps: true)
             for window in NSApplication.shared.windows where window.isVisible {
                 if let button = Self.statusButton(in: window.contentView) {
                     button.performClick(nil)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        NSApplication.shared.activate(ignoringOtherApps: true)
+                        for win in NSApplication.shared.windows where win.isVisible {
+                            let className = NSStringFromClass(type(of: win))
+                            if !className.contains("StatusBar") {
+                                win.makeKey()
+                            }
+                        }
+                    }
                     return
                 }
             }

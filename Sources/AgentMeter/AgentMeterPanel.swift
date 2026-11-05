@@ -55,23 +55,31 @@ struct AgentMeterPanel: View {
     @State private var hoveredQuickCompactID: String?
     @State private var hoveredQuickSendID: String?
     @State private var hoveredWorkspacePath: String?
+    @State private var hoveredWorkspaceAgentKey: String?
     @State private var hoveredHistoryID: String?
     @State private var hoveredHistoryDeleteID: String?
     @State private var hoveredHistoryConfirmDeleteID: String?
     @State private var hoveredHistoryCancelDeleteID: String?
     @State private var confirmingHistoryDeleteID: String?
+    @State private var selectedAgentID: String?
+    @State private var selectedHistoryID: String?
+    @State private var selectedWorkspacePath: String?
+    @State private var scrollTargetID: String?
     @State private var replyDrafts: [String: String] = [:]
     @State private var expandedReplyAgentID: String?
     @State private var focusedReplyAgentID: String?
     @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var filterNamespace
-    @Namespace private var launchFamilyNamespace
     @Namespace private var quickLaunchModeNamespace
     @Namespace private var historyFamilyFilterNamespace
 
     private var filteredActivities: [AgentActivityItem] {
-        switch selectedFilter {
+        activities(for: selectedFilter)
+    }
+
+    private func activities(for filter: AgentListFilter) -> [AgentActivityItem] {
+        switch filter {
         case .all:
             return model.agentActivities
         case .active:
@@ -90,29 +98,37 @@ struct AgentMeterPanel: View {
                 .padding(.top, 18)
                 .padding(.bottom, 12)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if showingSettings {
-                        AgentMeterSettings(model: model)
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if showingSettings {
+                            AgentMeterSettings(model: model)
+                                .transition(.opacity)
+                        } else if showingQuickLaunch {
+                            quickLaunchSection(dark: dark)
+                                .transition(.opacity)
+                        } else {
+                            TimelineView(.periodic(from: .now, by: 1.0)) { context in
+                                agentDynamicSection(dark: dark, now: context.date)
+                            }
                             .transition(.opacity)
-                    } else if showingQuickLaunch {
-                        quickLaunchSection(dark: dark)
-                            .transition(.opacity)
-                    } else {
-                        TimelineView(.periodic(from: .now, by: 1.0)) { context in
-                            agentDynamicSection(dark: dark, now: context.date)
                         }
-                        .transition(.opacity)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+                    .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22), value: model.agentActivities)
+                    .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20), value: selectedFilter)
+                }
+                .scrollIndicators(.automatic)
+                .defaultScrollAnchor(.top)
+                .onChange(of: scrollTargetID) { _, targetID in
+                    guard let targetID else { return }
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16)) {
+                        scrollProxy.scrollTo(targetID, anchor: nil)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
-                .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22), value: model.agentActivities)
-                .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20), value: selectedFilter)
             }
-            .scrollIndicators(.automatic)
-            .defaultScrollAnchor(.top)
 
             footer(dark: dark)
                 .padding(.horizontal, 20)
@@ -122,15 +138,273 @@ struct AgentMeterPanel: View {
         .modifier(FlatPanelSurface())
         .tint(FlatPalette.blue)
         .background(
-            PanelWindowMask(appearanceMode: model.appearanceMode) { visible in
-                if visible {
-                    model.panelDidOpen()
-                } else {
-                    model.panelDidClose()
+            PanelWindowMask(
+                appearanceMode: model.appearanceMode,
+                onVisibilityChange: { visible in
+                    if visible {
+                        model.panelDidOpen()
+                        focusedReplyAgentID = nil
+                        isHistorySearchFocused = false
+                        ensureValidKeyboardSelection()
+                    } else {
+                        focusedReplyAgentID = nil
+                        expandedReplyAgentID = nil
+                        isHistorySearchFocused = false
+                        model.panelDidClose()
+                    }
+                },
+                onKeyCommand: { cmd in
+                    handleKeyNavigation(cmd)
+                }
+            )
+        )
+        .onChange(of: model.agentActivities) { _, _ in
+            ensureValidKeyboardSelection()
+        }
+        .onChange(of: selectedFilter) { _, _ in
+            ensureValidKeyboardSelection(forceFirst: true)
+        }
+        .environment(\.colorScheme, model.appearanceMode.colorScheme ?? systemColorScheme)
+    }
+
+    private func ensureValidKeyboardSelection(forceFirst: Bool = false) {
+        if showingQuickLaunch {
+            if quickLaunchMode == .history {
+                let items = filteredHistoricalSessions
+                if forceFirst || selectedHistoryID == nil || !items.contains(where: { $0.id == selectedHistoryID }) {
+                    selectedHistoryID = items.first?.id
+                }
+            } else {
+                let items = model.recentLaunchWorkspaces
+                if forceFirst || selectedWorkspacePath == nil || !items.contains(where: { $0.id == selectedWorkspacePath }) {
+                    selectedWorkspacePath = items.first?.id
                 }
             }
-        )
-        .environment(\.colorScheme, model.appearanceMode.colorScheme ?? systemColorScheme)
+        } else if !showingSettings {
+            let items = filteredActivities
+            if forceFirst || selectedAgentID == nil || !items.contains(where: { $0.id == selectedAgentID }) {
+                selectedAgentID = items.first?.id
+            }
+        }
+    }
+
+    private func handleKeyNavigation(_ cmd: PanelKeyNavigationCommand) -> Bool {
+        if showingSettings {
+            if cmd == .escape {
+                withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
+                    showingSettings = false
+                }
+                return true
+            }
+            return false
+        }
+
+        if showingQuickLaunch {
+            if quickLaunchMode == .history {
+                let items = filteredHistoricalSessions
+                switch cmd {
+                case .moveDown, .moveUp:
+                    isHistorySearchFocused = false
+                    confirmingHistoryDeleteID = nil
+                    guard !items.isEmpty else { return true }
+                    let currentID = selectedHistoryID ?? hoveredHistoryID
+                    let nextIdx: Int
+                    if let currentID, let idx = items.firstIndex(where: { $0.id == currentID }) {
+                        nextIdx = cmd == .moveDown
+                            ? (idx + 1) % items.count
+                            : (idx - 1 + items.count) % items.count
+                    } else {
+                        nextIdx = cmd == .moveDown ? 0 : items.count - 1
+                    }
+                    let nextID = items[nextIdx].id
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.15)) {
+                        selectedHistoryID = nextID
+                        scrollTargetID = nextID
+                    }
+                    return true
+
+                case .moveLeft, .moveRight:
+                    isHistorySearchFocused = false
+                    confirmingHistoryDeleteID = nil
+                    let availableFamilies: [AgentFamily?] = [nil] + AgentFamily.allCases.filter { fam in
+                        model.historicalSessions.contains { $0.family == fam }
+                    }
+                    guard availableFamilies.count > 1 else { return true }
+                    let currentIdx = availableFamilies.firstIndex(where: { $0 == selectedHistoryFamily }) ?? 0
+                    let nextIdx = cmd == .moveRight
+                        ? (currentIdx + 1) % availableFamilies.count
+                        : (currentIdx - 1 + availableFamilies.count) % availableFamilies.count
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                        selectedHistoryFamily = availableFamilies[nextIdx]
+                    }
+                    DispatchQueue.main.async {
+                        ensureValidKeyboardSelection(forceFirst: true)
+                    }
+                    return true
+
+                case .confirmSelection:
+                    let targetID = selectedHistoryID ?? hoveredHistoryID ?? items.first?.id
+                    guard let targetID, let item = items.first(where: { $0.id == targetID }) else { return false }
+                    if confirmingHistoryDeleteID == item.id {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                            confirmingHistoryDeleteID = nil
+                            model.deleteHistoricalSession(item)
+                        }
+                    } else {
+                        confirmingHistoryDeleteID = nil
+                        isHistorySearchFocused = false
+                        showingQuickLaunch = false
+                        model.resumeOrFocusHistoricalSession(item)
+                    }
+                    return true
+
+                case .openInlineReply:
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16)) {
+                        isHistorySearchFocused = true
+                    }
+                    return true
+
+                case .escape:
+                    if confirmingHistoryDeleteID != nil {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16)) {
+                            confirmingHistoryDeleteID = nil
+                        }
+                        return true
+                    }
+                    if isHistorySearchFocused {
+                        isHistorySearchFocused = false
+                        return true
+                    }
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
+                        showingQuickLaunch = false
+                    }
+                    return true
+                }
+            } else {
+                // Quick Launch (.newSession) mode
+                let workspaces = model.recentLaunchWorkspaces
+                switch cmd {
+                case .moveDown, .moveUp:
+                    guard !workspaces.isEmpty else { return true }
+                    let currentID = selectedWorkspacePath ?? hoveredWorkspacePath
+                    let nextIdx: Int
+                    if let currentID, let idx = workspaces.firstIndex(where: { $0.id == currentID }) {
+                        nextIdx = cmd == .moveDown
+                            ? (idx + 1) % workspaces.count
+                            : (idx - 1 + workspaces.count) % workspaces.count
+                    } else {
+                        nextIdx = cmd == .moveDown ? 0 : workspaces.count - 1
+                    }
+                    let nextID = workspaces[nextIdx].id
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.15)) {
+                        selectedWorkspacePath = nextID
+                        scrollTargetID = nextID
+                    }
+                    return true
+
+                case .moveLeft, .moveRight:
+                    let families = AgentFamily.allCases
+                    let currentIdx = families.firstIndex(of: model.preferredLaunchFamily) ?? 0
+                    let nextIdx = cmd == .moveRight
+                        ? (currentIdx + 1) % families.count
+                        : (currentIdx - 1 + families.count) % families.count
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                        model.preferredLaunchFamily = families[nextIdx]
+                    }
+                    return true
+
+                case .confirmSelection:
+                    let targetID = selectedWorkspacePath ?? hoveredWorkspacePath ?? workspaces.first?.id
+                    guard let targetID, let ws = workspaces.first(where: { $0.id == targetID }) else { return false }
+                    showingQuickLaunch = false
+                    model.launchWorkspaceSession(family: model.preferredLaunchFamily, workspace: ws)
+                    return true
+
+                case .openInlineReply:
+                    return false
+
+                case .escape:
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
+                        showingQuickLaunch = false
+                    }
+                    return true
+                }
+            }
+        }
+
+        // Main Agent Activity List View
+        let items = filteredActivities
+        switch cmd {
+        case .moveDown, .moveUp:
+            focusedReplyAgentID = nil
+            expandedReplyAgentID = nil
+            guard !items.isEmpty else { return true }
+            let currentID = selectedAgentID ?? hoveredAgentID
+            let nextIdx: Int
+            if let currentID, let idx = items.firstIndex(where: { $0.id == currentID }) {
+                nextIdx = cmd == .moveDown
+                    ? (idx + 1) % items.count
+                    : (idx - 1 + items.count) % items.count
+            } else {
+                nextIdx = cmd == .moveDown ? 0 : items.count - 1
+            }
+            let nextID = items[nextIdx].id
+            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.15)) {
+                selectedAgentID = nextID
+                scrollTargetID = nextID
+            }
+            return true
+
+        case .moveLeft, .moveRight:
+            focusedReplyAgentID = nil
+            expandedReplyAgentID = nil
+            let allFilters = AgentListFilter.allCases
+            let currentIdx = allFilters.firstIndex(of: selectedFilter) ?? 0
+            let nextIdx = cmd == .moveRight
+                ? (currentIdx + 1) % allFilters.count
+                : (currentIdx - 1 + allFilters.count) % allFilters.count
+            let nextFilter = allFilters[nextIdx]
+            let nextItems = activities(for: nextFilter)
+            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                selectedFilter = nextFilter
+                selectedAgentID = nextItems.first?.id
+                scrollTargetID = nextItems.first?.id
+            }
+            return true
+
+        case .confirmSelection:
+            let targetID = selectedAgentID ?? hoveredAgentID ?? items.first?.id
+            guard let targetID, let item = items.first(where: { $0.id == targetID }) else { return false }
+            if item.status == .needsInput {
+                withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                    model.respondToPermission(item, choice: .approvePrimary)
+                }
+            } else {
+                model.jumpToAgentSession(item)
+            }
+            return true
+
+        case .openInlineReply:
+            let targetID = selectedAgentID ?? hoveredAgentID ?? items.first?.id
+            guard let targetID, let item = items.first(where: { $0.id == targetID }) else { return false }
+            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                selectedAgentID = item.id
+                expandedReplyAgentID = item.id
+                focusedReplyAgentID = item.id
+                scrollTargetID = item.id
+            }
+            return true
+
+        case .escape:
+            if focusedReplyAgentID != nil || expandedReplyAgentID != nil {
+                withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16)) {
+                    focusedReplyAgentID = nil
+                    expandedReplyAgentID = nil
+                }
+                return true
+            }
+            return false
+        }
     }
 
     private func header(dark: Bool) -> some View {
@@ -516,19 +790,19 @@ struct AgentMeterPanel: View {
             || isReplyFieldHovered
             || isQuickCompactHovered
             || isQuickSendHovered
+        let isSelected = selectedAgentID == item.id
+        let isHighlighted = isHovered || isSelected
         let familyColor = item.family.accentColor(dark: dark)
         let statusColor = agentStatusColor(item.status, dark: dark)
-        let isExpanded = shouldShowExtendedPreview(for: item, isHovered: isHovered)
+        let isExpanded = shouldShowExtendedPreview(for: item, isHovered: isHighlighted)
         let hasDraft = !(replyDrafts[item.id]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let isReplyFocused = focusedReplyAgentID == item.id
         let showInlineReply: Bool = {
             switch item.status {
             case .completed, .idle:
-                return isHovered || isReplyFocused || hasDraft || expandedReplyAgentID == item.id
-            case .needsInput:
+                return isHighlighted || isReplyFocused || hasDraft || expandedReplyAgentID == item.id
+            case .needsInput, .working:
                 return expandedReplyAgentID == item.id || isReplyFocused || hasDraft
-            case .working:
-                return false
             }
         }()
         let hasPreview = !item.terminalPreviewLines.isEmpty || showInlineReply
@@ -536,14 +810,14 @@ struct AgentMeterPanel: View {
         return VStack(alignment: .leading, spacing: 10) {
             agentRowHeader(
                 item: item,
-                isHovered: isHovered,
+                isHovered: isHighlighted,
                 familyColor: familyColor,
                 statusColor: statusColor,
                 dark: dark,
                 now: now
             )
 
-            // Live Micro Terminal Preview Box (100% full width, expands automatically on hover)
+            // Live Micro Terminal Preview Box (100% full width, expands automatically on hover or keyboard selection)
             if hasPreview {
                 miniTerminalPreview(
                     item: item,
@@ -568,8 +842,12 @@ struct AgentMeterPanel: View {
             PointingHandCursorOverlay(
                 onHoverChange: { hovering in
                     hoveredAgentID = hovering ? item.id : (hoveredAgentID == item.id ? nil : hoveredAgentID)
+                    if hovering {
+                        selectedAgentID = item.id
+                    }
                 },
                 onClick: {
+                    selectedAgentID = item.id
                     model.jumpToAgentSession(item)
                 }
             )
@@ -611,26 +889,27 @@ struct AgentMeterPanel: View {
         }
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(FlatPalette.elevatedRowBackground(dark: dark, hovered: isHovered))
+                .fill(FlatPalette.elevatedRowBackground(dark: dark, hovered: isHighlighted))
                 .overlay {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(
-                            rowBorderColor(for: item, isHovered: isHovered, familyColor: familyColor, dark: dark),
-                            lineWidth: item.status == .needsInput ? 1.2 : 1.0
+                            rowBorderColor(for: item, isHovered: isHovered, isSelected: isSelected, familyColor: familyColor, dark: dark),
+                            lineWidth: (item.status == .needsInput || isSelected) ? 1.35 : 1.0
                         )
                 }
                 .shadow(
-                    color: .black.opacity(dark ? (isHovered ? 0.24 : 0.14) : (isHovered ? 0.06 : 0.025)),
-                    radius: isHovered ? 5 : 2.5,
+                    color: .black.opacity(dark ? (isHighlighted ? 0.24 : 0.14) : (isHighlighted ? 0.06 : 0.025)),
+                    radius: isHighlighted ? 5 : 2.5,
                     x: 0,
-                    y: isHovered ? 2 : 1
+                    y: isHighlighted ? 2 : 1
                 )
         }
-        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16), value: isHovered)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16), value: isHighlighted)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: isExpanded)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: showInlineReply)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isCloseHovered)
         .help(item.title)
+        .id(item.id)
     }
 
     private func agentRowHeader(
@@ -943,7 +1222,7 @@ struct AgentMeterPanel: View {
 
             InlinePromptTextField(
                 text: draftBinding,
-                placeholder: en ? "Reply to Rex…" : "发送指令至 Rex…",
+                placeholder: en ? "Reply to Rex… (press /)" : "发送指令至 Rex…（按 / 聚焦）",
                 dark: dark,
                 requestFocus: focusedReplyAgentID == item.id,
                 onHoverChange: { hovering in
@@ -1434,7 +1713,13 @@ struct AgentMeterPanel: View {
         )
     }
 
-    private func rowBorderColor(for item: AgentActivityItem, isHovered: Bool, familyColor: Color, dark: Bool) -> Color {
+    private func rowBorderColor(for item: AgentActivityItem, isHovered: Bool, isSelected: Bool, familyColor: Color, dark: Bool) -> Color {
+        if isSelected {
+            if item.status == .needsInput {
+                return Color(red: 0.98, green: 0.66, blue: 0.18).opacity(dark ? 0.78 : 0.68)
+            }
+            return familyColor.opacity(dark ? 0.65 : 0.52)
+        }
         if item.status == .needsInput {
             return Color(red: 0.98, green: 0.66, blue: 0.18).opacity(dark ? 0.58 : 0.48)
         }
@@ -1741,7 +2026,8 @@ struct AgentMeterPanel: View {
         let isDeleteHovered = hoveredHistoryDeleteID == item.id
         let isConfirmHovered = hoveredHistoryConfirmDeleteID == item.id
         let isCancelHovered = hoveredHistoryCancelDeleteID == item.id
-        let isHovered = hoveredHistoryID == item.id || isDeleteHovered || isConfirmHovered || isCancelHovered || isConfirmingDelete
+        let isSelected = selectedHistoryID == item.id
+        let isHovered = hoveredHistoryID == item.id || isDeleteHovered || isConfirmHovered || isCancelHovered || isConfirmingDelete || isSelected
         let accent = item.family.accentColor(dark: dark)
         let isOnline = item.onlineActivityID != nil
         let elapsed = max(0, Int(now.timeIntervalSince(item.updatedAt)))
@@ -1858,6 +2144,9 @@ struct AgentMeterPanel: View {
                     : (en ? "Resume session in a new Rex tab (\(displayPath))" : "在 Rex 新建 Tab 恢复该历史会话（\(displayPath)）"),
                 onHoverChange: { hovering in
                     hoveredHistoryID = hovering ? item.id : (hoveredHistoryID == item.id ? nil : hoveredHistoryID)
+                    if hovering {
+                        selectedHistoryID = item.id
+                    }
                 },
                 onClick: {
                     if isConfirmingDelete {
@@ -1866,6 +2155,7 @@ struct AgentMeterPanel: View {
                         }
                         return
                     }
+                    selectedHistoryID = item.id
                     confirmingHistoryDeleteID = nil
                     isHistorySearchFocused = false
                     showingQuickLaunch = false
@@ -1900,14 +2190,15 @@ struct AgentMeterPanel: View {
                         .strokeBorder(
                             (isDeleteHovered || isConfirmingDelete)
                                 ? Color(red: 0.96, green: 0.32, blue: 0.38).opacity(dark ? 0.52 : 0.42)
-                                : (isHovered ? accent.opacity(dark ? 0.42 : 0.32) : FlatPalette.hairlineBorder(dark: dark)),
-                            lineWidth: isConfirmingDelete ? 1.2 : 1
+                                : (isHovered ? accent.opacity(isSelected ? (dark ? 0.58 : 0.46) : (dark ? 0.42 : 0.32)) : FlatPalette.hairlineBorder(dark: dark)),
+                            lineWidth: (isConfirmingDelete || isSelected) ? 1.3 : 1
                         )
                 )
         )
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16), value: isHovered)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isDeleteHovered)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: isConfirmingDelete)
+        .id(item.id)
     }
 
     private func deleteHistoryButton(
@@ -2039,234 +2330,217 @@ struct AgentMeterPanel: View {
         let selectedFamily = model.preferredLaunchFamily
         let accent = selectedFamily.accentColor(dark: dark)
 
-        return VStack(alignment: .leading, spacing: 14) {
-            // 1. Agent Family Selector
-            VStack(alignment: .leading, spacing: 8) {
-                Text(en ? "SELECT CLI AGENT" : "选择 CLI AGENT")
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(en ? "WORKSPACES (LOCAL & SSH)" : "工作目录与远程 SSH（点击 Agent 启动）")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 2)
-
-                HStack(spacing: 6) {
-                    ForEach(AgentFamily.allCases) { family in
-                        launchFamilyCardItem(family: family, selectedFamily: selectedFamily, dark: dark)
-                    }
+                Spacer()
+                HStack(spacing: 3.5) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(en ? "Browse…" : "浏览目录…")
+                        .font(.system(size: 10.5, weight: .semibold))
                 }
-                .padding(5)
+                .foregroundStyle(accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(FlatPalette.trackBackground(dark: dark))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
-                        )
+                    Capsule()
+                        .fill(accent.opacity(dark ? 0.16 : 0.11))
                 )
-
-                HStack(spacing: 6) {
-                    Text("$")
-                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                        .foregroundStyle(accent)
-                    Text(model.launchCommand(for: selectedFamily))
-                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 4)
-                    Text(en ? "Edit" : "修改命令")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(accent)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .overlay {
-                            PointingHandCursorOverlay(
-                                onClick: {
-                                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
-                                        showingQuickLaunch = false
-                                        showingSettings = true
-                                    }
-                                }
-                            )
+                .overlay {
+                    PointingHandCursorOverlay(
+                        onClick: {
+                            pickCustomDirectoryAndLaunch(family: selectedFamily)
                         }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(FlatPalette.terminalWellBackground(dark: dark))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
-                        )
-                )
-            }
-
-            // 2. Workspace Directory List
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Text(en ? "WORKSPACE (CLICK TO LAUNCH IN REX)" : "选择工作目录（点击即在 Rex 新建 Tab 启动）")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    HStack(spacing: 3.5) {
-                        Image(systemName: "folder.badge.plus")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(en ? "Browse…" : "浏览目录…")
-                            .font(.system(size: 10.5, weight: .semibold))
-                    }
-                    .foregroundStyle(accent)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(accent.opacity(dark ? 0.16 : 0.11))
                     )
-                    .overlay {
-                        PointingHandCursorOverlay(
-                            onClick: {
-                                pickCustomDirectoryAndLaunch(family: selectedFamily)
-                            }
-                        )
-                    }
-                }
-                .padding(.horizontal, 2)
-
-                VStack(spacing: 8) {
-                    ForEach(model.recentLaunchWorkspaces, id: \.self) { path in
-                        workspaceLaunchRow(path: path, family: selectedFamily, accent: accent, dark: dark)
-                    }
                 }
             }
-        }
-    }
+            .padding(.horizontal, 2)
 
-    private func launchFamilyCardItem(
-        family: AgentFamily,
-        selectedFamily: AgentFamily,
-        dark: Bool
-    ) -> some View {
-        let isSelected = selectedFamily == family
-        let fColor = family.accentColor(dark: dark)
-        return VStack(spacing: 5) {
-            AgentFamilyBadgeIcon(
-                family: family,
-                dark: dark,
-                highlighted: isSelected,
-                size: 28,
-                muted: !isSelected
-            )
-            Text(family.shortName)
-                .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 9)
-        .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(FlatPalette.selectedPillBackground(dark: dark))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(fColor.opacity(dark ? 0.45 : 0.35), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(dark ? 0.24 : 0.06), radius: 2, x: 0, y: 1)
-                    .matchedGeometryEffect(id: "launchFamilyCard", in: launchFamilyNamespace)
-            }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay {
-            PointingHandCursorOverlay(
-                onClick: {
-                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
-                        model.preferredLaunchFamily = family
-                    }
+            VStack(spacing: 9) {
+                ForEach(model.recentLaunchWorkspaces) { workspace in
+                    workspaceLaunchRow(workspace: workspace, selectedFamily: selectedFamily, dark: dark)
                 }
-            )
+            }
         }
     }
 
     private func workspaceLaunchRow(
-        path: String,
-        family: AgentFamily,
-        accent: Color,
+        workspace: LaunchWorkspaceItem,
+        selectedFamily: AgentFamily,
         dark: Bool
     ) -> some View {
-        let isHovered = hoveredWorkspacePath == path
-        let name = URL(fileURLWithPath: path).lastPathComponent
-        let displayPath = abbreviateHomePath(path)
+        let isSelected = selectedWorkspacePath == workspace.id
+        let isCardHovered = hoveredWorkspacePath == workspace.id || isSelected
+        let displayPath = abbreviateHomePath(workspace.path)
+        let activeAccent = selectedFamily.accentColor(dark: dark)
+        let sshCyan = dark
+            ? Color(red: 0.32, green: 0.78, blue: 0.98)
+            : Color(red: 0.05, green: 0.50, blue: 0.82)
 
-        return HStack(spacing: 11) {
-            Image(systemName: "folder.fill")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isHovered ? accent : .secondary)
-                .frame(width: 30, height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 8.5, style: .continuous)
-                        .fill(
-                            isHovered
-                                ? family.tintFill(dark: dark, highlighted: true)
-                                : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
-                        )
-                )
-
-            VStack(alignment: .leading, spacing: 2.5) {
-                let en = model.language == .english
-                Text(name.isEmpty || name == "/" ? (en ? "Home" : "主目录") : name)
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text(displayPath)
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            Spacer(minLength: 8)
-
-            HStack(spacing: 4) {
-                Text(model.language == .english ? "Launch \(family.shortName)" : "启动 \(family.shortName)")
-                    .font(.system(size: 10.5, weight: .semibold))
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9, weight: .bold))
-            }
-            .foregroundStyle(isHovered ? accent : .secondary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4.5)
-            .background(
-                Capsule()
-                    .fill(
-                        isHovered
-                            ? accent.opacity(dark ? 0.20 : 0.12)
-                            : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
+        return VStack(alignment: .leading, spacing: 8.5) {
+            // Top Row: Directory or SSH Remote Machine + Path
+            HStack(alignment: .center, spacing: 8) {
+                if let sshHost = workspace.sshTarget, !sshHost.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "network")
+                            .font(.system(size: 9.5, weight: .bold))
+                        Text("SSH · \(sshHost)")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(sshCyan)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2.5)
+                    .background(
+                        Capsule()
+                            .fill(sshCyan.opacity(dark ? 0.16 : 0.11))
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(sshCyan.opacity(dark ? 0.35 : 0.25), lineWidth: 1)
+                            )
                     )
-            )
+                    .fixedSize(horizontal: true, vertical: false)
+
+                    HStack(spacing: 3.5) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                        Text(displayPath)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                } else {
+                    HStack(spacing: 5) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(isCardHovered ? activeAccent : .secondary)
+                        Text(displayPath)
+                            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+
+                Spacer(minLength: 4)
+            }
+
+            // Bottom Row: 4 Agent Launch Buttons (Codex, Claude, Copilot, Antigravity)
+            HStack(spacing: 6) {
+                ForEach(AgentFamily.allCases) { family in
+                    workspaceAgentLaunchButton(
+                        workspace: workspace,
+                        family: family,
+                        isKeyboardActive: isSelected && selectedFamily == family,
+                        dark: dark
+                    )
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            PointingHandCursorOverlay(
-                onHoverChange: { hovering in
-                    hoveredWorkspacePath = hovering ? path : (hoveredWorkspacePath == path ? nil : hoveredWorkspacePath)
-                },
-                onClick: {
-                    showingQuickLaunch = false
-                    model.launchNewAgentSession(family: family, cwdPath: path)
-                }
-            )
+        .onHover { hovering in
+            hoveredWorkspacePath = hovering ? workspace.id : (hoveredWorkspacePath == workspace.id ? nil : hoveredWorkspacePath)
+            if hovering {
+                selectedWorkspacePath = workspace.id
+            }
         }
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(FlatPalette.elevatedRowBackground(dark: dark, hovered: isHovered))
+                .fill(FlatPalette.elevatedRowBackground(dark: dark, hovered: isCardHovered))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(
-                            isHovered ? accent.opacity(dark ? 0.38 : 0.28) : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04)),
-                            lineWidth: 0.8
+                            isCardHovered
+                                ? (workspace.isSSH ? sshCyan : activeAccent).opacity(isSelected ? (dark ? 0.55 : 0.44) : (dark ? 0.36 : 0.26))
+                                : FlatPalette.hairlineBorder(dark: dark),
+                            lineWidth: isSelected ? 1.25 : 1.0
                         )
                 )
         )
-        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.15), value: isHovered)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.15), value: isCardHovered)
+        .id(workspace.id)
+    }
+
+    private func workspaceAgentLaunchButton(
+        workspace: LaunchWorkspaceItem,
+        family: AgentFamily,
+        isKeyboardActive: Bool,
+        dark: Bool
+    ) -> some View {
+        let en = model.language == .english
+        let buttonKey = "\(workspace.id):\(family.rawValue)"
+        let isHovered = hoveredWorkspaceAgentKey == buttonKey
+        let isHighlighted = isHovered || isKeyboardActive
+        let accent = family.accentColor(dark: dark)
+        let displayPath = abbreviateHomePath(workspace.path)
+        let tooltipText: String = {
+            if let sshHost = workspace.sshTarget, !sshHost.isEmpty {
+                return en
+                    ? "Connect to \(sshHost) (\(displayPath)) & launch \(family.badgeTitle)"
+                    : "SSH 连接 \(sshHost)（\(displayPath)）并启动 \(family.badgeTitle)"
+            }
+            return en
+                ? "Launch \(family.badgeTitle) in \(displayPath)"
+                : "在 \(displayPath) 启动 \(family.badgeTitle)"
+        }()
+
+        return HStack(spacing: 4.5) {
+            AgentFamilyGlyph(
+                family: family,
+                color: isHighlighted ? accent : FlatPalette.inkSecondary(dark: dark),
+                size: 11.5
+            )
+            Text(family.shortName)
+                .font(.system(size: 10.5, weight: isHighlighted ? .semibold : .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(isHighlighted ? accent : .secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 5.5)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(
+                    isHighlighted
+                        ? family.tintFill(dark: dark, highlighted: true)
+                        : (dark ? Color.white.opacity(0.045) : Color.black.opacity(0.035))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(
+                            isHighlighted
+                                ? accent.opacity(dark ? 0.48 : 0.36)
+                                : FlatPalette.hairlineBorder(dark: dark),
+                            lineWidth: 1
+                        )
+                )
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            PointingHandCursorOverlay(
+                tooltip: tooltipText,
+                onHoverChange: { hovering in
+                    hoveredWorkspaceAgentKey = hovering ? buttonKey : (hoveredWorkspaceAgentKey == buttonKey ? nil : hoveredWorkspaceAgentKey)
+                    if hovering {
+                        hoveredWorkspacePath = workspace.id
+                        selectedWorkspacePath = workspace.id
+                        model.preferredLaunchFamily = family
+                    }
+                },
+                onClick: {
+                    selectedWorkspacePath = workspace.id
+                    showingQuickLaunch = false
+                    model.launchWorkspaceSession(family: family, workspace: workspace)
+                }
+            )
+        }
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isHighlighted)
     }
 
     private func abbreviateHomePath(_ path: String) -> String {

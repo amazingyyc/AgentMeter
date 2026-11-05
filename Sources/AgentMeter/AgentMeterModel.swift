@@ -16,7 +16,7 @@ final class AgentMeterModel {
 
     var agentActivities: [AgentActivityItem] = []
     var historicalSessions: [AgentHistorySessionItem] = []
-    var recentLaunchWorkspaces: [String] = []
+    var recentLaunchWorkspaces: [LaunchWorkspaceItem] = []
     var customLaunchCommands: [String: String] = [:]
     var preferredLaunchFamily: AgentFamily {
         didSet {
@@ -316,7 +316,7 @@ final class AgentMeterModel {
     }
 
     func refreshLaunchWorkspaces() {
-        recentLaunchWorkspaces = agentTracker.discoverRecentWorkspaces(liveItems: agentActivities)
+        recentLaunchWorkspaces = agentTracker.discoverLaunchWorkspaceItems(liveItems: agentActivities)
         refreshHistoricalSessions()
     }
 
@@ -334,7 +334,7 @@ final class AgentMeterModel {
             jumpToAgentSession(liveItem)
             return
         }
-        recordRecentWorkspace(item.cwdPath)
+        recordRecentWorkspace(LaunchWorkspaceItem(path: item.cwdPath, sshTarget: nil))
         let baseCmd = launchCommand(for: item.family)
         Task { @MainActor in
             _ = await agentTracker.resumeHistoricalSession(item, baseCommand: baseCmd)
@@ -350,27 +350,43 @@ final class AgentMeterModel {
         }
     }
 
-    func recordRecentWorkspace(_ path: String) {
-        let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
-        var current = UserDefaults.standard.stringArray(forKey: "recentLaunchWorkspaces") ?? []
-        current.removeAll { URL(fileURLWithPath: $0).standardizedFileURL.path == standardized }
-        current.insert(standardized, at: 0)
-        if current.count > 10 {
-            current = Array(current.prefix(10))
+    func recordRecentWorkspace(_ workspace: LaunchWorkspaceItem) {
+        let normalizedPath: String = {
+            if workspace.isSSH {
+                let trimmed = workspace.path.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? "~" : trimmed
+            }
+            return URL(fileURLWithPath: workspace.path).standardizedFileURL.path
+        }()
+        let entry: [String: String] = [
+            "path": normalizedPath,
+            "ssh": workspace.sshTarget ?? "",
+        ]
+        var current = (UserDefaults.standard.array(forKey: "recentLaunchWorkspaceRecords") as? [[String: String]]) ?? []
+        current.removeAll { rec in
+            (rec["path"] ?? "") == normalizedPath && (rec["ssh"] ?? "") == (workspace.sshTarget ?? "")
         }
-        UserDefaults.standard.set(current, forKey: "recentLaunchWorkspaces")
+        current.insert(entry, at: 0)
+        if current.count > 16 {
+            current = Array(current.prefix(16))
+        }
+        UserDefaults.standard.set(current, forKey: "recentLaunchWorkspaceRecords")
         refreshLaunchWorkspaces()
     }
 
-    func launchNewAgentSession(family: AgentFamily, cwdPath: String) {
+    func launchWorkspaceSession(family: AgentFamily, workspace: LaunchWorkspaceItem) {
         preferredLaunchFamily = family
-        recordRecentWorkspace(cwdPath)
+        recordRecentWorkspace(workspace)
         let command = launchCommand(for: family)
         Task { @MainActor in
-            _ = await agentTracker.launchNewSession(family: family, cwdPath: cwdPath, customCommand: command)
+            _ = await agentTracker.launchWorkspaceSession(family: family, workspace: workspace, customCommand: command)
             try? await Task.sleep(for: .milliseconds(900))
             await pollAgents()
         }
+    }
+
+    func launchNewAgentSession(family: AgentFamily, cwdPath: String) {
+        launchWorkspaceSession(family: family, workspace: LaunchWorkspaceItem(path: cwdPath, sshTarget: nil))
     }
 
     private func startAgentMonitor() {
@@ -401,7 +417,7 @@ final class AgentMeterModel {
         let result = await agentTracker.poll(isDemo: isDemo)
         agentActivities = result.items
         if recentLaunchWorkspaces.isEmpty {
-            recentLaunchWorkspaces = agentTracker.discoverRecentWorkspaces(liveItems: result.items)
+            recentLaunchWorkspaces = agentTracker.discoverLaunchWorkspaceItems(liveItems: result.items)
         }
         if historicalSessions.isEmpty {
             refreshHistoricalSessions()

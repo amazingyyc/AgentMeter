@@ -493,11 +493,15 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
   }
   .am-c-title {
     font-size: 12.5px;
     font-weight: 600;
     color: var(--am-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .am-pill {
     display: inline-flex;
@@ -507,6 +511,8 @@
     border-radius: 999px;
     font-size: 10px;
     font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .am-pill.confirm {
     background: #FFF2DC;
@@ -692,6 +698,117 @@
   }
 
   /* ==========================================================================
+     NEW SESSION LAUNCH VIEW (LOCAL & SSH WORKSPACES + 4 AGENT BUTTONS)
+     ========================================================================== */
+  .am-new-view {
+    display: none;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .am-new-view.visible {
+    display: flex;
+  }
+  .am-new-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2px;
+  }
+  .am-new-title {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--am-ink2);
+    letter-spacing: 0.2px;
+  }
+  .am-browse-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3.5px;
+    padding: 3.5px 8px;
+    border-radius: 999px;
+    background: rgba(204, 89, 46, 0.11);
+    color: #CC592E;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .am-ws-card {
+    background: #FFFFFF;
+    border: 1px solid var(--am-border);
+    border-radius: 12px;
+    padding: 9.5px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .am-ws-card.selected-ssh {
+    border-color: rgba(13, 128, 209, 0.48);
+    border-width: 1.25px;
+    background: #FCFCFB;
+  }
+  .am-ws-top {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .am-ssh-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2.5px 7px;
+    border-radius: 999px;
+    background: rgba(13, 128, 209, 0.11);
+    border: 1px solid rgba(13, 128, 209, 0.25);
+    color: #0D80D1;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 700;
+  }
+  .am-ws-path {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--am-ink);
+  }
+  .am-ws-btns {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .am-ws-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 5px 4px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.035);
+    border: 1px solid var(--am-border);
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--am-ink2);
+  }
+  .am-ws-btn.active-codex {
+    background: #EBFBF3;
+    border-color: rgba(20, 143, 97, 0.38);
+    color: #148F61;
+    font-weight: 600;
+  }
+  .am-ws-btn.active-codex.pressed {
+    background: #148F61;
+    color: #FFFFFF;
+    transform: scale(0.95);
+  }
+  .am-ws-btn.active-claude {
+    background: #FFF0E8;
+    border-color: rgba(204, 89, 46, 0.36);
+    color: #CC592E;
+    font-weight: 600;
+  }
+
+  /* ==========================================================================
      HISTORY SESSION VIEW (Exact match to AgentMeterPanel.swift)
      ========================================================================== */
   .am-history-view {
@@ -717,16 +834,16 @@
   .am-hist-filters {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 3.5px;
   }
   .am-hf-pill {
     display: inline-flex;
     align-items: center;
-    gap: 3.5px;
-    padding: 4.5px 8.5px;
+    gap: 3px;
+    padding: 3.5px 6.8px;
     border-radius: 999px;
     background: var(--am-track);
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 500;
     color: var(--am-ink2);
   }
@@ -764,6 +881,7 @@
     display: flex;
     align-items: center;
     gap: 5px;
+    flex-shrink: 0;
   }
   .am-resume-pill {
     display: inline-flex;
@@ -775,6 +893,8 @@
     font-size: 10px;
     font-weight: 600;
     color: var(--am-ink2);
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .am-hist-row.hovered-resume .am-resume-pill {
     background: rgba(204, 89, 46, 0.12);
@@ -789,6 +909,7 @@
     align-items: center;
     justify-content: center;
     color: var(--am-ink2);
+    flex-shrink: 0;
   }
   .am-confirm-del-btn {
     display: inline-flex;
@@ -801,6 +922,8 @@
     color: #D62438;
     font-size: 10px;
     font-weight: 700;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .am-cancel-del-btn {
     padding: 3.5px 7.5px;
@@ -810,6 +933,8 @@
     color: var(--am-ink2);
     font-size: 10px;
     font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .am-footer {
@@ -915,28 +1040,30 @@
 </head>
 <body>
 
-  <!-- Reusable Authentic SF-Symbol SVG Icons -->
+  <!-- Reusable Official Brand & SF-Symbol SVG Icons -->
   <svg width="0" height="0" style="position:absolute;">
     <defs>
-      <!-- sparkle (Claude) -->
-      <symbol id="sf-sparkle" viewBox="0 0 16 16">
-        <path d="M8 1.5C8.35 4.8 11.2 7.65 14.5 8C11.2 8.35 8.35 11.2 8 14.5C7.65 11.2 4.8 8.35 1.5 8C4.8 7.65 7.65 4.8 8 1.5Z" fill="currentColor"/>
+      <!-- Official Anthropic Claude Starburst -->
+      <symbol id="sf-sparkle" viewBox="0 0 24 24">
+        <path fill="currentColor" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/>
       </symbol>
-      <!-- terminal.fill (Codex) -->
-      <symbol id="sf-terminal" viewBox="0 0 16 16">
-        <rect x="1.5" y="2.5" width="13" height="11" rx="2.5" fill="currentColor"/>
-        <path d="M4.5 6L7 8L4.5 10M8 10.2H11" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- Official OpenAI Codex 6-Petal Blossom Knot -->
+      <symbol id="sf-terminal" viewBox="0 0 24 24">
+        <path fill="currentColor" fill-rule="evenodd" d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"/>
       </symbol>
-      <!-- sparkles (Copilot) -->
-      <symbol id="sf-sparkles" viewBox="0 0 16 16">
-        <path d="M6.5 2C6.8 4.5 8.8 6.5 11.3 6.8C8.8 7.1 6.8 9.1 6.5 11.6C6.2 9.1 4.2 7.1 1.7 6.8C4.2 6.5 6.2 4.5 6.5 2Z" fill="currentColor"/>
-        <path d="M12.2 9.2C12.4 10.6 13.4 11.6 14.8 11.8C13.4 12 12.4 13 12.2 14.4C12 13 11 12 9.6 11.8C11 11.6 12 10.6 12.2 9.2Z" fill="currentColor"/>
+      <!-- Official GitHub Copilot Mark -->
+      <symbol id="sf-sparkles" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z"/>
       </symbol>
-      <!-- atom (Antigravity) -->
-      <symbol id="sf-atom" viewBox="0 0 16 16">
-        <ellipse cx="8" cy="8" rx="6.2" ry="2.6" transform="rotate(30 8 8)" fill="none" stroke="currentColor" stroke-width="1.35"/>
-        <ellipse cx="8" cy="8" rx="6.2" ry="2.6" transform="rotate(-30 8 8)" fill="none" stroke="currentColor" stroke-width="1.35"/>
-        <circle cx="8" cy="8" r="1.4" fill="currentColor"/>
+      <!-- Official Antigravity Arch Mark -->
+      <symbol id="sf-atom" viewBox="0 0 24 24">
+        <path fill="currentColor" d="M12 2.2C8.9 2.2 6.8 5.1 5.1 9.6C3.4 14.1 2.0 18.2 1.2 19.8C0.8 20.6 1.5 21.5 2.3 21.1C3.8 20.3 6.2 18.2 8.2 14.8C9.6 12.4 10.7 8.8 12 8.8C13.3 8.8 14.4 12.4 15.8 14.8C17.8 18.2 20.2 20.3 21.7 21.1C22.5 21.5 23.2 20.6 22.8 19.8C22.0 18.2 20.6 14.1 18.9 9.6C17.2 5.1 15.1 2.2 12 2.2Z"/>
+      </symbol>
+      <!-- network (SSH) -->
+      <symbol id="sf-network" viewBox="0 0 14 14">
+        <circle cx="7" cy="7" r="5.3" fill="none" stroke="currentColor" stroke-width="1.25"/>
+        <ellipse cx="7" cy="7" rx="2.4" ry="5.3" fill="none" stroke="currentColor" stroke-width="1.2"/>
+        <line x1="1.9" y1="7" x2="12.1" y2="7" stroke="currentColor" stroke-width="1.2"/>
       </symbol>
       <!-- clock.arrow.circlepath (History) -->
       <symbol id="sf-history" viewBox="0 0 16 16">
@@ -1007,7 +1134,7 @@
         <div class="rex-titlebar">
           <div class="win-lights"><span class="wl-r"></span><span class="wl-y"></span><span class="wl-g"></span></div>
           <div class="rex-tabs" id="win1Tabs">
-            <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>1: migrate-agentmeter</div>
+            <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>1: refactor-api-router</div>
             <div class="rex-tab">2: logs</div>
           </div>
         </div>
@@ -1018,8 +1145,8 @@
       <div class="rex-win inactive" id="win2" style="top: 266px; left: 96px; width: 510px; height: 274px; z-index: 12;">
         <div class="rex-titlebar">
           <div class="win-lights"><span class="wl-r"></span><span class="wl-y"></span><span class="wl-g"></span></div>
-          <div class="rex-tabs">
-            <div class="rex-tab active"><span class="tab-dot" style="background:#2EE59D;"></span>1: ssh://gpu-node-02 · Codex</div>
+          <div class="rex-tabs" id="win2Tabs">
+            <div class="rex-tab active"><span class="tab-dot" style="background:#2EE59D;"></span>1: ssh://gpu-node-01 · Codex</div>
             <div class="rex-tab">2: htop</div>
           </div>
         </div>
@@ -1059,6 +1186,10 @@
                 <line x1="8.5" y1="6" x2="12.5" y2="6" stroke="#3AA9FF" stroke-width="1.8" stroke-linecap="round"/>
                 <line x1="8.5" y1="9.5" x2="10.5" y2="9.5" stroke="#8E95A5" stroke-width="1.8" stroke-linecap="round"/>
               </svg>
+              <!-- Plus Emblem (shown in New view) -->
+              <svg id="plusHdrSvg" width="15" height="15" style="display:none; color:#CC592E;">
+                <use href="#sf-plus"/>
+              </svg>
               <!-- History Clock Emblem (shown in History view, matching AgentMeterPanel.swift:127) -->
               <svg id="historyHdrSvg" width="16" height="16" style="display:none; color:#CC592E;">
                 <use href="#sf-history"/>
@@ -1069,8 +1200,8 @@
 
             <!-- Mode Switcher (New | History 37) -->
             <div class="am-mode-switcher" id="popModeSwitcher">
-              <span class="am-mode-pill">New</span>
-              <span class="am-mode-pill active">History 37</span>
+              <span class="am-mode-pill" id="modePillNew">New</span>
+              <span class="am-mode-pill active" id="modePillHist">History 37</span>
             </div>
           </div>
 
@@ -1106,24 +1237,25 @@
           <div class="am-card needs-input" id="card1">
             <div class="am-close-badge">✕</div>
             <div class="am-card-hdr">
-              <div class="am-icon" style="background:#FFF0E8; color:#CC592E;">
-                <svg width="15" height="15"><use href="#sf-sparkle"/></svg>
+              <div class="am-icon" style="background:#FFF0E8; color:#CC592E; border:1px solid rgba(204,89,46,0.2);">
+                <svg width="16.5" height="16.5"><use href="#sf-sparkle"/></svg>
               </div>
               <div class="am-rows">
                 <div class="am-r1">
-                  <span class="am-c-title">migrate-agentmeter</span>
+                  <span class="am-c-title">refactor-api-router</span>
                   <span class="am-pill confirm" id="c1Pill">
                     <span class="am-pill-dot"></span>
                     <span id="c1PillTxt">Confirm</span>
                   </span>
                 </div>
                 <div class="am-r2">
-                  <div class="am-sub">
-                    <span style="color:#CC592E; font-weight:600;">Claude Code</span>
-                    <span>·</span>
-                    <span>AgentMeter</span>
+                  <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
+                    <svg width="10" height="10" style="color:#CC592E;"><use href="#sf-folder"/></svg>
+                    <span>~/dev/api-server</span>
                   </div>
                   <div class="am-telem">
+                    <span><span style="color:#148F61;">+142</span> <span style="color:#D13342;">-28</span></span>
+                    <span>·</span>
                     <span style="color:#148F61;">🔥 4:42</span>
                     <span>·</span>
                     <span class="am-bars">
@@ -1142,12 +1274,12 @@
             <div class="am-well">
               <div class="am-well-row">
                 <div class="am-well-line-bar" id="c1Bar"></div>
-                <div class="am-well-code" id="c1Code">⏺ Bash(zsh scripts/build-app.sh) — Allow?</div>
+                <div class="am-well-code" id="c1Code">⏺ Bash(npm test -- --grep router) — Allow?</div>
               </div>
               <div class="am-reply-row" id="c1ReplyRow">
                 <span style="color:#CC592E; font-weight:700;">❯</span>
                 <div class="am-reply-input" id="c1ReplyInput">
-                  <span style="color:var(--am-ink3);">Reply to Rex…</span>
+                  <span style="color:var(--am-ink3);">Reply to Rex… (press /)</span>
                 </div>
                 <span class="am-chip">/compact</span>
                 <span class="am-chip send" id="c1Send">Send ⏎</span>
@@ -1165,12 +1297,12 @@
             </div>
           </div>
 
-          <!-- Card 2: Codex CLI -->
+          <!-- Card 2: Codex CLI (SSH Remote) -->
           <div class="am-card" id="card2">
             <div class="am-close-badge">✕</div>
             <div class="am-card-hdr">
-              <div class="am-icon" style="background:#EBFBF3; color:#148F61;">
-                <svg width="15" height="15"><use href="#sf-terminal"/></svg>
+              <div class="am-icon" style="background:#EBFBF3; color:#148F61; border:1px solid rgba(20,143,97,0.2);">
+                <svg width="16.5" height="16.5"><use href="#sf-terminal"/></svg>
               </div>
               <div class="am-rows">
                 <div class="am-r1">
@@ -1181,12 +1313,15 @@
                   </span>
                 </div>
                 <div class="am-r2">
-                  <div class="am-sub">
-                    <span style="color:#148F61; font-weight:600;">Codex CLI</span>
+                  <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
+                    <svg width="10" height="10" style="color:#148F61;"><use href="#sf-network"/></svg>
+                    <span>gpu-node-01</span>
                     <span>·</span>
-                    <span style="font-family:var(--font-mono); font-size:10px;">⇄ gpu-node-02</span>
+                    <span>~/work/runtime-rs</span>
                   </div>
                   <div class="am-telem">
+                    <span><span style="color:#148F61;">+64</span> <span style="color:#D13342;">-22</span></span>
+                    <span>·</span>
                     <span class="am-bars">
                       <span class="am-bar-seg on-green"></span>
                       <span class="am-bar-seg on-green"></span>
@@ -1210,8 +1345,8 @@
           <!-- Card 3: Copilot CLI -->
           <div class="am-card" style="padding: 9px 13px;">
             <div class="am-card-hdr">
-              <div class="am-icon" style="width:28px; height:28px; background:#EDF4FF; color:#2970E0;">
-                <svg width="14" height="14"><use href="#sf-sparkles"/></svg>
+              <div class="am-icon" style="width:28px; height:28px; background:#EDF4FF; color:#2970E0; border:1px solid rgba(41,112,224,0.2);">
+                <svg width="14.5" height="14.5"><use href="#sf-sparkles"/></svg>
               </div>
               <div class="am-rows">
                 <div class="am-r1">
@@ -1219,17 +1354,121 @@
                   <span class="am-pill done">✓ Done</span>
                 </div>
                 <div class="am-r2">
-                  <div class="am-sub">
-                    <span style="color:#2970E0; font-weight:600;">Copilot CLI</span>
-                    <span>·</span>
-                    <span>gateway</span>
+                  <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
+                    <svg width="10" height="10" style="color:#2970E0;"><use href="#sf-folder"/></svg>
+                    <span>~/dev/auth-gateway</span>
                   </div>
                   <div class="am-telem">
+                    <span><span style="color:#148F61;">+18</span> <span style="color:#D13342;">-4</span></span>
+                    <span>·</span>
                     <span style="color:#148F61;">🔥 3:18</span>
                     <span>·</span>
                     <span>22%</span>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NEW SESSION LAUNCH VIEW (Unified Local & SSH Workspaces + 4 Agent Buttons) -->
+        <div class="am-new-view" id="popNew">
+          <div class="am-new-hdr">
+            <span class="am-new-title">WORKSPACES (LOCAL &amp; SSH)</span>
+            <span class="am-browse-pill">
+              <svg width="10" height="10"><use href="#sf-folder"/></svg>
+              <span>Browse…</span>
+            </span>
+          </div>
+
+          <!-- Workspace 1: Remote SSH Machine (gpu-node-01) -->
+          <div class="am-ws-card selected-ssh" id="wsCard1">
+            <div class="am-ws-top">
+              <span class="am-ssh-badge">
+                <svg width="9.5" height="9.5"><use href="#sf-network"/></svg>
+                <span>SSH · gpu-node-01</span>
+              </span>
+              <span class="am-ws-path">
+                <svg width="10" height="10" style="color:var(--am-ink3);"><use href="#sf-folder"/></svg>
+                <span>~/work/runtime-rs</span>
+              </span>
+            </div>
+            <div class="am-ws-btns">
+              <div class="am-ws-btn active-codex" id="ws1BtnCodex">
+                <svg width="11.5" height="11.5"><use href="#sf-terminal"/></svg>
+                <span>Codex</span>
+              </div>
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-sparkle"/></svg>
+                <span>Claude</span>
+              </div>
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-sparkles"/></svg>
+                <span>Copilot</span>
+              </div>
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-atom"/></svg>
+                <span>Antigravity</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workspace 2: Local Workspace -->
+          <div class="am-ws-card">
+            <div class="am-ws-top">
+              <span class="am-ws-path">
+                <svg width="10.5" height="10.5" style="color:#CC592E;"><use href="#sf-folder"/></svg>
+                <span>~/dev/api-server</span>
+              </span>
+            </div>
+            <div class="am-ws-btns">
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-terminal"/></svg>
+                <span>Codex</span>
+              </div>
+              <div class="am-ws-btn active-claude">
+                <svg width="11.5" height="11.5"><use href="#sf-sparkle"/></svg>
+                <span>Claude</span>
+              </div>
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-sparkles"/></svg>
+                <span>Copilot</span>
+              </div>
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-atom"/></svg>
+                <span>Antigravity</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workspace 3: Remote SSH Machine (cloud-box-02) -->
+          <div class="am-ws-card">
+            <div class="am-ws-top">
+              <span class="am-ssh-badge">
+                <svg width="9.5" height="9.5"><use href="#sf-network"/></svg>
+                <span>SSH · cloud-box-02</span>
+              </span>
+              <span class="am-ws-path">
+                <svg width="10" height="10" style="color:var(--am-ink3);"><use href="#sf-folder"/></svg>
+                <span>~/srv/search-index</span>
+              </span>
+            </div>
+            <div class="am-ws-btns">
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-terminal"/></svg>
+                <span>Codex</span>
+              </div>
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-sparkle"/></svg>
+                <span>Claude</span>
+              </div>
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-sparkles"/></svg>
+                <span>Copilot</span>
+              </div>
+              <div class="am-ws-btn">
+                <svg width="11.5" height="11.5"><use href="#sf-atom"/></svg>
+                <span>Antigravity</span>
               </div>
             </div>
           </div>
@@ -1248,22 +1487,22 @@
               <span class="am-hf-count">37</span>
             </span>
             <span class="am-hf-pill">
-              <svg width="10" height="10" style="color:var(--am-ink2);"><use href="#sf-terminal"/></svg>
+              <svg width="10.5" height="10.5" style="color:var(--am-ink2);"><use href="#sf-terminal"/></svg>
               <span>Codex</span>
               <span class="am-hf-count">10</span>
             </span>
             <span class="am-hf-pill">
-              <svg width="10" height="10" style="color:var(--am-ink2);"><use href="#sf-sparkle"/></svg>
+              <svg width="10.5" height="10.5" style="color:var(--am-ink2);"><use href="#sf-sparkle"/></svg>
               <span>Claude</span>
               <span class="am-hf-count">15</span>
             </span>
             <span class="am-hf-pill">
-              <svg width="10" height="10" style="color:var(--am-ink2);"><use href="#sf-sparkles"/></svg>
+              <svg width="10.5" height="10.5" style="color:var(--am-ink2);"><use href="#sf-sparkles"/></svg>
               <span>Copilot</span>
               <span class="am-hf-count">3</span>
             </span>
             <span class="am-hf-pill">
-              <svg width="10" height="10" style="color:var(--am-ink2);"><use href="#sf-atom"/></svg>
+              <svg width="10.5" height="10.5" style="color:var(--am-ink2);"><use href="#sf-atom"/></svg>
               <span>Antigravity</span>
               <span class="am-hf-count">9</span>
             </span>
@@ -1271,12 +1510,12 @@
 
           <!-- History Row 1: Resumed in Rex -->
           <div class="am-hist-row" id="histRow1">
-            <div class="am-icon" style="background:#FFF0E8; color:#CC592E;">
-              <svg width="15" height="15"><use href="#sf-sparkle"/></svg>
+            <div class="am-icon" style="background:#FFF0E8; color:#CC592E; border:1px solid rgba(204,89,46,0.2);">
+              <svg width="16.5" height="16.5"><use href="#sf-sparkle"/></svg>
             </div>
             <div class="am-rows">
               <div class="am-r1">
-                <span class="am-c-title">RoboDojo Embodied AI Benchmark</span>
+                <span class="am-c-title">Async connection pool &amp; retry backoff</span>
                 <div class="am-hist-actions">
                   <span class="am-resume-pill" id="histRow1Resume">Resume ↗</span>
                   <span class="am-trash-btn">
@@ -1286,10 +1525,8 @@
               </div>
               <div class="am-r2">
                 <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
-                  <span style="color:#CC592E; font-family:var(--font-sans); font-weight:600; font-size:10.5px;">Claude</span>
-                  <span>·</span>
-                  <svg width="10" height="10" style="color:var(--am-ink3);"><use href="#sf-folder"/></svg>
-                  <span>~/code/Papers</span>
+                  <svg width="10" height="10" style="color:#CC592E;"><use href="#sf-folder"/></svg>
+                  <span>~/dev/api-server</span>
                   <span>·</span>
                   <span style="color:var(--am-ink3);">main</span>
                 </div>
@@ -1300,12 +1537,12 @@
 
           <!-- History Row 2: Demonstrates Safe 2-Step Physical Delete -->
           <div class="am-hist-row" id="histRow2">
-            <div class="am-icon" style="background:#EBFBF3; color:#148F61;">
-              <svg width="15" height="15"><use href="#sf-terminal"/></svg>
+            <div class="am-icon" style="background:#EBFBF3; color:#148F61; border:1px solid rgba(20,143,97,0.2);">
+              <svg width="16.5" height="16.5"><use href="#sf-terminal"/></svg>
             </div>
             <div class="am-rows">
               <div class="am-r1">
-                <span class="am-c-title">Lock-free ring buffer test</span>
+                <span class="am-c-title">Lock-free ring buffer benchmark</span>
                 <div class="am-hist-actions" id="histRow2Actions">
                   <span class="am-resume-pill">Resume ↗</span>
                   <span class="am-trash-btn" id="histRow2Trash">
@@ -1315,10 +1552,8 @@
               </div>
               <div class="am-r2">
                 <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
-                  <span style="color:#148F61; font-family:var(--font-sans); font-weight:600; font-size:10.5px;">Codex</span>
-                  <span>·</span>
-                  <svg width="10" height="10" style="color:var(--am-ink3);"><use href="#sf-folder"/></svg>
-                  <span>~/code/scheduler-kernel</span>
+                  <svg width="10" height="10" style="color:#148F61;"><use href="#sf-folder"/></svg>
+                  <span>~/dev/runtime-rs</span>
                 </div>
                 <span style="font-size:10px; color:var(--am-ink3);">1d ago</span>
               </div>
@@ -1327,12 +1562,12 @@
 
           <!-- History Row 3: Antigravity -->
           <div class="am-hist-row">
-            <div class="am-icon" style="background:#FFF3E0; color:#C26B1A;">
-              <svg width="15" height="15"><use href="#sf-atom"/></svg>
+            <div class="am-icon" style="background:#FFF3E0; color:#C26B1A; border:1px solid rgba(194,107,26,0.2);">
+              <svg width="16.5" height="16.5"><use href="#sf-atom"/></svg>
             </div>
             <div class="am-rows">
               <div class="am-r1">
-                <span class="am-c-title">Markdown theme &amp; syntax config</span>
+                <span class="am-c-title">GraphQL schema &amp; codegen pipeline</span>
                 <div class="am-hist-actions">
                   <span class="am-resume-pill">Resume ↗</span>
                   <span class="am-trash-btn">
@@ -1342,10 +1577,8 @@
               </div>
               <div class="am-r2">
                 <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
-                  <span style="color:#C26B1A; font-family:var(--font-sans); font-weight:600; font-size:10.5px;">Antigravity</span>
-                  <span>·</span>
-                  <svg width="10" height="10" style="color:var(--am-ink3);"><use href="#sf-folder"/></svg>
-                  <span>~/code</span>
+                  <svg width="10" height="10" style="color:#C26B1A;"><use href="#sf-folder"/></svg>
+                  <span>~/dev/web-client</span>
                 </div>
                 <span style="font-size:10px; color:var(--am-ink3);">3d ago</span>
               </div>
@@ -1383,14 +1616,15 @@
     </div>
     <div class="ctrl-group">
       <button class="c-btn active" data-t="0">1. Tab Hunting</button>
-      <button class="c-btn" data-t="5.5">2. Live Monitor &amp; Cache</button>
-      <button class="c-btn" data-t="10.2">3. Inline Yes/No</button>
-      <button class="c-btn" data-t="14.2">4. Quick Reply</button>
-      <button class="c-btn" data-t="19.2">5. ⌥⏎ Rex Jump</button>
-      <button class="c-btn" data-t="23.5">6. ↺ History Resume</button>
+      <button class="c-btn" data-t="4.8">2. Git +N -M &amp; Cache</button>
+      <button class="c-btn" data-t="9.2">3. Inline Yes/No</button>
+      <button class="c-btn" data-t="13.0">4. / Quick Reply</button>
+      <button class="c-btn" data-t="17.6">5. ⌥⏎ Rex Jump</button>
+      <button class="c-btn" data-t="21.4">6. + SSH Launch</button>
+      <button class="c-btn" data-t="26.2">7. ↺ History Resume</button>
     </div>
     <div class="ctrl-group">
-      <span id="timerTxt" style="font-family:var(--font-mono); color:#9CA3AF;">0.0s / 30.0s</span>
+      <span id="timerTxt" style="font-family:var(--font-mono); color:#9CA3AF;">0.0s / 32.0s</span>
     </div>
   </div>
 
@@ -1400,7 +1634,7 @@
     document.body.classList.add('clean-mode');
   }
 
-  const TOTAL = 30.0;
+  const TOTAL = 32.0;
   let t = 0;
   let playing = !location.search.includes('manual=1');
   let lastNow = performance.now();
@@ -1413,19 +1647,27 @@
   const win3           = document.getElementById('win3');
   const win1Tabs       = document.getElementById('win1Tabs');
   const win1Body       = document.getElementById('win1Body');
+  const win2Tabs       = document.getElementById('win2Tabs');
+  const win2Body       = document.getElementById('win2Body');
   const popover        = document.getElementById('popover');
   const popLogoBox     = document.getElementById('popLogoBox');
   const emblemSvg      = document.getElementById('emblemSvg');
+  const plusHdrSvg     = document.getElementById('plusHdrSvg');
   const historyHdrSvg  = document.getElementById('historyHdrSvg');
   const popTitle       = document.getElementById('popTitle');
   const popBadge       = document.getElementById('popBadge');
   const popModeSwitcher= document.getElementById('popModeSwitcher');
+  const modePillNew    = document.getElementById('modePillNew');
+  const modePillHist   = document.getElementById('modePillHist');
   const popHdrBtns     = document.getElementById('popHdrBtns');
   const popBackBtn     = document.getElementById('popBackBtn');
   const popToolbar     = document.getElementById('popToolbar');
   const popList        = document.getElementById('popList');
+  const popNew         = document.getElementById('popNew');
   const popHistory     = document.getElementById('popHistory');
+  const btnPlus        = document.getElementById('btnPlus');
   const btnHistory     = document.getElementById('btnHistory');
+  const ws1BtnCodex    = document.getElementById('ws1BtnCodex');
   const card1          = document.getElementById('card1');
   const card2          = document.getElementById('card2');
   const c1Pill         = document.getElementById('c1Pill');
@@ -1472,64 +1714,70 @@
     return kf[kf.length - 1][prop];
   }
 
-  // Cursor trajectory keyframes (verified against exact DOM bounding boxes)
+  // Cursor trajectory keyframes
   const CURSOR_KF = [
     { t: 0.0,  x: 260, y: 170 },
-    { t: 1.0,  x: 260, y: 170 },
-    { t: 1.6,  x: 610, y: 220 },
-    { t: 2.5,  x: 610, y: 220 },
-    { t: 3.1,  x: 290, y: 390 },
-    { t: 4.0,  x: 290, y: 390 },
-    { t: 4.6,  x: 230, y: 160 },
-    { t: 5.4,  x: 230, y: 160 },
-    // Click menu bar icon (#mbBtn center: 845, 14) at 6.1s
-    { t: 6.1,  x: 845, y: 14  },
-    { t: 7.2,  x: 845, y: 14  },
-    // Hover over warm cache & context % at 8.0s
-    { t: 8.0,  x: 888, y: 158 },
-    { t: 10.1, x: 888, y: 158 },
-    // Move to Allow ⏎ (#c1Allow center: 790, 244) and click at 11.4s
-    { t: 10.9, x: 790, y: 244 },
-    { t: 13.8, x: 790, y: 244 },
-    // Move to Inline Reply input (#c1ReplyInput: 690, 234) and click at 14.8s
-    { t: 14.6, x: 690, y: 234 },
-    { t: 16.9, x: 690, y: 234 },
-    // Move to Send ⏎ (#c1Send center: 903, 234) and click at 17.6s
+    { t: 0.9,  x: 260, y: 170 },
+    { t: 1.5,  x: 610, y: 220 },
+    { t: 2.3,  x: 610, y: 220 },
+    { t: 2.9,  x: 290, y: 390 },
+    { t: 3.7,  x: 290, y: 390 },
+    { t: 4.3,  x: 230, y: 160 },
+    { t: 4.8,  x: 230, y: 160 },
+    // Click menu bar icon (#mbBtn center: 845, 14) at 5.4s
+    { t: 5.4,  x: 845, y: 14  },
+    { t: 6.3,  x: 845, y: 14  },
+    // Hover over Git +142 -28 · 🔥 4:42 · 64% at 7.2s
+    { t: 7.2,  x: 876, y: 158 },
+    { t: 9.1,  x: 876, y: 158 },
+    // Move to Allow ⏎ (#c1Allow center: 790, 244) and click at 10.4s
+    { t: 9.9,  x: 790, y: 244 },
+    { t: 12.6, x: 790, y: 244 },
+    // Move to Inline Reply input (#c1ReplyInput: 690, 234) and click at 13.6s
+    { t: 13.4, x: 690, y: 234 },
+    { t: 15.6, x: 690, y: 234 },
+    // Move to Send ⏎ (#c1Send center: 903, 234) and click at 16.3s
+    { t: 16.2, x: 903, y: 234 },
     { t: 17.5, x: 903, y: 234 },
-    { t: 19.0, x: 903, y: 234 },
-    // Move to Card 2 (Codex CLI: 764, 330) and click at 20.6s
-    { t: 19.8, x: 764, y: 330 },
-    { t: 21.0, x: 764, y: 330 },
-    { t: 21.8, x: 340, y: 380 },
-    { t: 23.3, x: 340, y: 380 },
-    // Reopen popover & click History clock button (#btnHistory center: 901, 68) at 24.6s
-    { t: 24.1, x: 901, y: 68  },
-    { t: 25.0, x: 901, y: 68  },
-    // Click Trash on History Row 2 (#histRow2Trash center: 929, 254) at 25.9s -> Confirm Delete (852, 255) at 26.9s
-    { t: 25.7, x: 929, y: 254 },
-    { t: 26.2, x: 929, y: 254 },
-    { t: 26.7, x: 852, y: 255 },
-    { t: 27.3, x: 852, y: 255 },
-    // Click Resume ↗ on History Row 1 (#histRow1Resume center: 880, 187) at 28.3s
-    { t: 28.0, x: 880, y: 187 },
-    { t: 30.0, x: 880, y: 187 }
+    // Move to Card 2 (Codex CLI SSH: 764, 330) and click at 18.8s
+    { t: 18.2, x: 764, y: 330 },
+    { t: 19.2, x: 764, y: 330 },
+    { t: 20.0, x: 340, y: 380 },
+    { t: 21.2, x: 340, y: 380 },
+    // Reopen popover & click + New button (#btnPlus center: 864, 68) at 22.3s
+    { t: 22.0, x: 864, y: 68  },
+    { t: 22.7, x: 864, y: 68  },
+    // Move to [Codex] button under SSH · gpu-node-01 (#ws1BtnCodex center: 630, 174) and click at 24.4s
+    { t: 23.5, x: 630, y: 174 },
+    { t: 25.4, x: 630, y: 174 },
+    // Click History 37 pill (#modePillHist center: 709, 68) at 26.5s
+    { t: 26.2, x: 709, y: 68  },
+    { t: 26.9, x: 709, y: 68  },
+    // Click Trash on History Row 2 (#histRow2Trash center: 929, 254) at 27.8s -> Confirm Delete (852, 255) at 28.8s
+    { t: 27.6, x: 929, y: 254 },
+    { t: 28.1, x: 929, y: 254 },
+    { t: 28.6, x: 852, y: 255 },
+    { t: 29.2, x: 852, y: 255 },
+    // Click Resume ↗ on History Row 1 (#histRow1Resume center: 880, 187) at 30.2s
+    { t: 29.9, x: 880, y: 187 },
+    { t: 32.0, x: 880, y: 187 }
   ];
 
   // Camera zoom & origin keyframes
   const CAM_KF = [
     { t: 0.0,  s: 1.00, ox: 50, oy: 50 },
-    { t: 5.4,  s: 1.00, ox: 50, oy: 50 },
-    { t: 6.3,  s: 1.22, ox: 82, oy: 18 },
-    { t: 7.3,  s: 1.22, ox: 82, oy: 18 },
-    { t: 8.1,  s: 1.25, ox: 82, oy: 36 },
-    { t: 20.7, s: 1.25, ox: 82, oy: 36 },
-    { t: 21.5, s: 1.06, ox: 35, oy: 65 },
-    { t: 23.3, s: 1.06, ox: 35, oy: 65 },
-    { t: 24.2, s: 1.25, ox: 82, oy: 30 },
-    { t: 30.0, s: 1.25, ox: 82, oy: 30 }
+    { t: 4.8,  s: 1.00, ox: 50, oy: 50 },
+    { t: 5.6,  s: 1.22, ox: 82, oy: 18 },
+    { t: 6.5,  s: 1.22, ox: 82, oy: 18 },
+    { t: 7.3,  s: 1.25, ox: 82, oy: 36 },
+    { t: 18.9, s: 1.25, ox: 82, oy: 36 },
+    { t: 19.7, s: 1.06, ox: 35, oy: 65 },
+    { t: 21.2, s: 1.06, ox: 35, oy: 65 },
+    { t: 22.1, s: 1.25, ox: 82, oy: 30 },
+    { t: 32.0, s: 1.25, ox: 82, oy: 30 }
   ];
 
-  const CLICK_TIMES = [1.6, 3.1, 4.6, 6.1, 11.4, 14.8, 17.6, 20.6, 24.6, 25.9, 26.9, 28.3];
+  const CLICK_TIMES = [1.5, 2.9, 4.3, 5.4, 10.4, 13.6, 16.3, 18.8, 22.3, 24.4, 26.5, 27.8, 28.8, 30.2];
 
   function focusWin(activeWin) {
     [win1, win2, win3].forEach(w => {
@@ -1574,45 +1822,48 @@
     camera.style.transform = `scale(${cs.toFixed(4)})`;
 
     // 4. Desktop windows focus state
-    if (time < 1.6) focusWin(win1);
-    else if (time < 3.1) focusWin(win3);
-    else if (time < 4.6) focusWin(win2);
-    else if (time < 20.8) focusWin(win1);
-    else if (time < 28.4) focusWin(win2);
+    if (time < 1.5) focusWin(win1);
+    else if (time < 2.9) focusWin(win3);
+    else if (time < 4.3) focusWin(win2);
+    else if (time < 19.0) focusWin(win1);
+    else if (time < 30.3) focusWin(win2);
     else focusWin(win1);
 
-    win2.style.borderColor = (time >= 20.8 && time < 23.5) ? '#2EE59D' : '';
+    win2.style.borderColor = (time >= 19.0 && time < 21.4) ? '#2EE59D' : '';
 
     // 5. Ultra-short minimal HUD Pill (2-4 words max)
-    if (time < 5.5) {
+    if (time < 4.8) {
       hudDot.style.background = '#F43F5E';
       hudText.textContent = '❌ Terminal Tab Hunting';
-    } else if (time < 10.2) {
+    } else if (time < 9.2) {
       hudDot.style.background = '#0D99FF';
-      hudText.textContent = '⚡ Live Output · 🔥 5m Cache · Context %';
-    } else if (time < 14.2) {
+      hudText.textContent = '⚡ Git +N -M · 🔥 5m Cache · Context %';
+    } else if (time < 13.0) {
       hudDot.style.background = '#10B981';
-      hudText.textContent = '✓ Inline Yes / No Approval';
-    } else if (time < 19.2) {
+      hudText.textContent = '✓ Inline Yes / No Approval (⏎)';
+    } else if (time < 17.6) {
       hudDot.style.background = '#E05A2B';
-      hudText.textContent = '💬 Inline Quick Reply & /compact';
-    } else if (time < 23.5) {
+      hudText.textContent = '💬 / Quick Reply & /compact';
+    } else if (time < 21.4) {
       hudDot.style.background = '#10B981';
       hudText.textContent = '⌥⏎ 1-Click Rex Tab Jump';
+    } else if (time < 26.2) {
+      hudDot.style.background = '#0D80D1';
+      hudText.textContent = '🌐 + New Local & SSH 1-Click Launch';
     } else {
       hudDot.style.background = '#8B5CF6';
-      hudText.textContent = 'History Resume & Safe Delete';
+      hudText.textContent = '↺ History Resume & Safe Delete';
     }
 
     // 6. Popover open/close interpolation
     let popProgress = 0;
-    if (time >= 6.15 && time < 20.75) {
-      if (time < 6.40) popProgress = easeOutCubic((time - 6.15) / 0.25);
+    if (time >= 5.45 && time < 18.95) {
+      if (time < 5.70) popProgress = easeOutCubic((time - 5.45) / 0.25);
       else popProgress = 1;
-    } else if (time >= 20.75 && time < 21.00) {
-      popProgress = 1 - easeOutCubic((time - 20.75) / 0.25);
-    } else if (time >= 23.60) {
-      if (time < 23.85) popProgress = easeOutCubic((time - 23.60) / 0.25);
+    } else if (time >= 18.95 && time < 19.20) {
+      popProgress = 1 - easeOutCubic((time - 18.95) / 0.25);
+    } else if (time >= 21.50) {
+      if (time < 21.75) popProgress = easeOutCubic((time - 21.50) / 0.25);
       else popProgress = 1;
     }
     popover.style.opacity = popProgress.toFixed(3);
@@ -1622,7 +1873,7 @@
     mbBtn.classList.toggle('active', popProgress > 0.5);
 
     // 7. Menu bar dot & Card 1 state
-    if (time < 11.6) {
+    if (time < 10.6) {
       mbDot.className = 'mb-badge-dot';
       popBadge.textContent = '1 Confirm';
       popBadge.className = 'am-hdr-pill';
@@ -1630,24 +1881,24 @@
       c1Pill.className = 'am-pill confirm';
       c1PillTxt.textContent = 'Confirm';
       c1Bar.className = 'am-well-line-bar';
-      c1Code.textContent = '⏺ Bash(zsh scripts/build-app.sh) — Allow?';
+      c1Code.textContent = '⏺ Bash(npm test -- --grep router) — Allow?';
       c1ReplyRow.classList.remove('visible');
       c1ApproveRow.classList.remove('hidden');
-      c1Allow.classList.toggle('pressed', time >= 11.4 && time < 11.6);
+      c1Allow.classList.toggle('pressed', time >= 10.4 && time < 10.6);
 
       win1Tabs.innerHTML = `
-        <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>1: migrate-agentmeter</div>
+        <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>1: refactor-api-router</div>
         <div class="rex-tab">2: logs</div>
       `;
       win1Body.innerHTML = `
         <div style="color:#9CA3AF;">$ claude</div>
-        <div style="color:#F28B50; margin-top:4px;">⏺ Bash(zsh scripts/build-app.sh)</div>
+        <div style="color:#F28B50; margin-top:4px;">⏺ Bash(npm test -- --grep router)</div>
         <div class="term-prompt-box">
           <div style="font-weight:700;">Do you want to proceed?</div>
           <div>❯ 1. Yes, allow (⏎) &nbsp;&nbsp; 2. Always &nbsp;&nbsp; 3. No (Esc)</div>
         </div>
       `;
-    } else if (time < 17.8) {
+    } else if (time < 16.5) {
       mbDot.className = 'mb-badge-dot completed';
       popBadge.textContent = '1 Done';
       popBadge.className = 'am-hdr-pill blue';
@@ -1655,24 +1906,24 @@
       c1Pill.className = 'am-pill done';
       c1PillTxt.textContent = 'Done';
       c1Bar.className = 'am-well-line-bar green';
-      c1Code.textContent = '✓ Built: build/Agent Meter.app (1.8s)';
+      c1Code.textContent = '✓ 24 router tests passed (1.8s)';
       c1ApproveRow.classList.add('hidden');
       c1ReplyRow.classList.add('visible');
 
-      const msg = "run tests and commit";
-      if (time < 14.9) {
-        c1ReplyInput.innerHTML = `<span style="color:var(--am-ink3);">Reply to Rex…</span>`;
+      const msg = "run benchmarks and commit";
+      if (time < 13.7) {
+        c1ReplyInput.innerHTML = `<span style="color:var(--am-ink3);">Reply to Rex… (press /)</span>`;
       } else {
-        const count = Math.min(msg.length, Math.max(1, Math.floor(((time - 14.9) / 1.7) * msg.length)));
+        const count = Math.min(msg.length, Math.max(1, Math.floor(((time - 13.7) / 1.7) * msg.length)));
         c1ReplyInput.innerHTML = `<span>${msg.slice(0, count)}</span><span class="am-caret"></span>`;
       }
-      c1Send.classList.toggle('pressed', time >= 17.6 && time < 17.8);
+      c1Send.classList.toggle('pressed', time >= 16.3 && time < 16.5);
 
       win1Body.innerHTML = `
         <div style="color:#9CA3AF;">$ claude</div>
         <div style="color:#2EE59D; margin-top:4px;">✓ Approved from Agent Meter menu bar (⏎)</div>
-        <div style="color:#D1D5DB;">[4/4] Linking AgentMeter (release)...</div>
-        <div style="color:#2EE59D; font-weight:700;">✓ Built: build/Agent Meter.app</div>
+        <div style="color:#D1D5DB;">PASS src/router/__tests__/dispatch.spec.ts</div>
+        <div style="color:#2EE59D; font-weight:700;">✓ 24 router tests passed (1.8s)</div>
       `;
     } else {
       mbDot.className = 'mb-badge-dot';
@@ -1682,48 +1933,78 @@
       c1Pill.className = 'am-pill running';
       c1PillTxt.textContent = 'Running 0:02';
       c1Bar.className = 'am-well-line-bar blue';
-      c1Code.textContent = '› run tests and commit';
+      c1Code.textContent = '› run benchmarks and commit';
       c1ApproveRow.classList.add('hidden');
       c1ReplyRow.classList.remove('visible');
 
-      if (time >= 28.4) {
+      if (time >= 30.3) {
         win1Tabs.innerHTML = `
-          <div class="rex-tab"><span class="tab-dot" style="background:#E05A2B;"></span>1: migrate-agentmeter</div>
-          <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>★ 2: Claude · RoboDojo</div>
+          <div class="rex-tab"><span class="tab-dot" style="background:#E05A2B;"></span>1: refactor-api-router</div>
+          <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>★ 2: Claude · api-server</div>
         `;
         win1Body.innerHTML = `
-          <div style="color:#9CA3AF;">$ claude --resume d6e685bf-8594-4b52-9bb3-54a3479ac0e7</div>
-          <div style="color:#2EE59D; margin-top:4px;">✓ Resumed session in ~/code/Papers (main)</div>
+          <div style="color:#9CA3AF;">$ claude --resume 8f4e21a0-9c12-4b52-8a11-72b1903ce104</div>
+          <div style="color:#2EE59D; margin-top:4px;">✓ Resumed session in ~/dev/api-server (main)</div>
           <div style="color:#F28B50; margin-top:4px;">❯ Ready for follow-up prompt...</div>
         `;
       } else {
         win1Body.innerHTML = `
           <div style="color:#9CA3AF;">$ claude</div>
-          <div style="color:#2EE59D; margin-top:4px;">✓ Built: build/Agent Meter.app</div>
-          <div style="color:#F28B50; margin-top:4px;">❯ run tests and commit</div>
+          <div style="color:#2EE59D; margin-top:4px;">✓ 24 router tests passed (1.8s)</div>
+          <div style="color:#F28B50; margin-top:4px;">❯ run benchmarks and commit</div>
         `;
       }
     }
 
-    // 8. Card 2 Hover & History View (Step 6)
-    card2.classList.toggle('hovered', time >= 19.6 && time < 20.9);
-    btnHistory.classList.toggle('active', time >= 24.5 && time < 24.75);
+    // 8. Card 2 Hover, + New View (Step 6), and History View (Step 7)
+    card2.classList.toggle('hovered', time >= 18.0 && time < 19.1);
+    btnPlus.classList.toggle('active', time >= 22.2 && time < 22.45);
+    ws1BtnCodex.classList.toggle('pressed', time >= 24.35 && time < 24.65);
 
-    const inHistoryView = time >= 24.75;
-    popLogoBox.classList.toggle('history-mode', inHistoryView);
-    emblemSvg.style.display = inHistoryView ? 'none' : 'block';
+    if (time >= 24.55) {
+      win2Tabs.innerHTML = `
+        <div class="rex-tab"><span class="tab-dot" style="background:#2EE59D;"></span>1: ssh://gpu-node-01 · Codex</div>
+        <div class="rex-tab active"><span class="tab-dot" style="background:#2EE59D;"></span>★ 2: Codex · gpu-node-01 · runtime-rs</div>
+      `;
+      win2Body.innerHTML = `
+        <div style="color:#9CA3AF;">$ ssh -t gpu-node-01 "cd ~/work/runtime-rs && codex"</div>
+        <div style="color:#38BDF8; margin-top:4px;">✓ Connected to gpu-node-01 (~/work/runtime-rs)</div>
+        <div style="color:#2EE59D; margin-top:4px;">❯ Codex CLI ready in remote workspace...</div>
+      `;
+    } else {
+      win2Tabs.innerHTML = `
+        <div class="rex-tab active"><span class="tab-dot" style="background:#2EE59D;"></span>1: ssh://gpu-node-01 · Codex</div>
+        <div class="rex-tab">2: htop</div>
+      `;
+      win2Body.innerHTML = `
+        <div style="color:#9CA3AF;">$ codex --sandbox danger-full-access</div>
+        <div style="color:#2EE59D;">✓ Updated src/scheduler/work_stealing.rs (+64 -22)</div>
+        <div style="color:#38BDF8;">› Running cargo bench --release ... 412 ns/iter</div>
+      `;
+    }
+
+    const inSubView = time >= 22.45;
+    const inNewView = time >= 22.45 && time < 26.55;
+    const inHistoryView = time >= 26.55;
+
+    popLogoBox.classList.toggle('history-mode', inSubView);
+    emblemSvg.style.display = inSubView ? 'none' : 'block';
+    plusHdrSvg.style.display = inNewView ? 'block' : 'none';
     historyHdrSvg.style.display = inHistoryView ? 'block' : 'none';
-    popTitle.style.display = inHistoryView ? 'none' : '';
-    popBadge.style.display = inHistoryView ? 'none' : '';
-    popModeSwitcher.classList.toggle('visible', inHistoryView);
-    popHdrBtns.style.display = inHistoryView ? 'none' : 'flex';
-    popBackBtn.classList.toggle('visible', inHistoryView);
-    popToolbar.style.display = inHistoryView ? 'none' : 'flex';
-    popList.classList.toggle('hidden', inHistoryView);
+    popTitle.style.display = inSubView ? 'none' : '';
+    popBadge.style.display = inSubView ? 'none' : '';
+    popModeSwitcher.classList.toggle('visible', inSubView);
+    modePillNew.classList.toggle('active', inNewView);
+    modePillHist.classList.toggle('active', inHistoryView);
+    popHdrBtns.style.display = inSubView ? 'none' : 'flex';
+    popBackBtn.classList.toggle('visible', inSubView);
+    popToolbar.style.display = inSubView ? 'none' : 'flex';
+    popList.classList.toggle('hidden', inSubView);
+    popNew.classList.toggle('visible', inNewView);
     popHistory.classList.toggle('visible', inHistoryView);
 
     // History Row 2 Delete Confirmation & Removal
-    if (time < 25.95) {
+    if (time < 27.85) {
       histRow2.style.display = 'flex';
       histRow2.className = 'am-hist-row';
       histRow2Actions.innerHTML = `
@@ -1732,7 +2013,7 @@
           <svg width="10.5" height="10.5"><use href="#sf-trash"/></svg>
         </span>
       `;
-    } else if (time < 27.0) {
+    } else if (time < 28.9) {
       histRow2.style.display = 'flex';
       histRow2.className = 'am-hist-row confirming-del';
       histRow2Actions.innerHTML = `
@@ -1746,15 +2027,16 @@
       histRow2.style.display = 'none';
     }
 
-    histRow1.classList.toggle('hovered-resume', time >= 27.6);
+    histRow1.classList.toggle('hovered-resume', time >= 29.5);
 
     // 9. Controls UI update
     let activeNav = 0;
-    if (time >= 23.5) activeNav = 5;
-    else if (time >= 19.2) activeNav = 4;
-    else if (time >= 14.2) activeNav = 3;
-    else if (time >= 10.2) activeNav = 2;
-    else if (time >= 5.5) activeNav = 1;
+    if (time >= 26.2) activeNav = 6;
+    else if (time >= 21.4) activeNav = 5;
+    else if (time >= 17.6) activeNav = 4;
+    else if (time >= 13.0) activeNav = 3;
+    else if (time >= 9.2) activeNav = 2;
+    else if (time >= 4.8) activeNav = 1;
     navBtns.forEach((b, idx) => b.classList.toggle('active', idx === activeNav));
     timerTxt.textContent = `${time.toFixed(1)}s / ${TOTAL.toFixed(1)}s`;
   };

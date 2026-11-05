@@ -120,6 +120,25 @@ struct GitDiffSummary: Equatable, Sendable {
     }
 }
 
+struct LaunchWorkspaceItem: Identifiable, Equatable, Sendable {
+    let path: String
+    var sshTarget: String? = nil
+
+    var id: String {
+        if let sshTarget, !sshTarget.isEmpty {
+            return "ssh://\(sshTarget):\(path)"
+        }
+        return "local:\(path)"
+    }
+
+    var isSSH: Bool {
+        if let sshTarget, !sshTarget.isEmpty {
+            return true
+        }
+        return false
+    }
+}
+
 struct AgentHistorySessionItem: Identifiable, Equatable, Sendable {
     let id: String
     let sessionID: String
@@ -252,9 +271,10 @@ final class AgentActivityTracker {
                     AgentActivityItem(
                         id: "demo-codex",
                         family: .codex,
-                        workspace: "AgentMeter",
-                        cwdPath: "/Users/yyc/code/AgentMeter",
-                        title: en ? "Build AgentMeter menu bar monitor & Rex jump" : "创建 AgentMeter 菜单栏监控与 Rex 跳转支持",
+                        workspace: "runtime-rs",
+                        cwdPath: "~/dev/runtime-rs",
+                        sshTarget: "gpu-node-01",
+                        title: en ? "Optimize lock-free work-stealing scheduler" : "优化无锁 work-stealing 调度器",
                         status: .working,
                         isUnreadCompletion: false,
                         detail: en ? "Running task" : "正在执行任务",
@@ -263,19 +283,18 @@ final class AgentActivityTracker {
                         tty: "ttys004",
                         rexPane: nil,
                         terminalPreviewLines: [
-                            en ? "• Building native macOS menu bar view & micro terminal preview" : "• 正在构建 macOS 原生菜单栏状态视图与微缩终端预览卡片",
-                            "  swift build --configuration release",
-                            "  Compiling AgentMeter AgentMonitor.swift",
+                            "› cargo bench --release ... 412 ns/iter",
+                            "  Updated src/scheduler/work_stealing.rs (+64 -22)",
                         ],
-                        contextPercentUsed: 18,
-                        gitDiff: GitDiffSummary(changedFiles: 4, insertions: 148, deletions: 36)
+                        contextPercentUsed: 38,
+                        gitDiff: GitDiffSummary(changedFiles: 4, insertions: 64, deletions: 22)
                     ),
                     AgentActivityItem(
                         id: "demo-claude",
                         family: .claude,
-                        workspace: "AgentMeter",
-                        cwdPath: "/Users/yyc/code/AgentMeter",
-                        title: en ? "Claude Code CLI integration & live tracking" : "Claude Code CLI 适配与实时状态追踪",
+                        workspace: "api-server",
+                        cwdPath: "~/dev/api-server",
+                        title: en ? "Refactor async router & middleware pipeline" : "重构异步路由与中间件管线",
                         status: .needsInput,
                         isUnreadCompletion: true,
                         detail: en ? "Awaiting confirmation" : "等待确认",
@@ -284,21 +303,21 @@ final class AgentActivityTracker {
                         tty: "ttys003",
                         rexPane: nil,
                         terminalPreviewLines: [
-                            "⏺ Bash(rm -rf ./build/temp-cache && zsh scripts/build-app.sh)",
-                            "Do you want to run this command in ~/code/AgentMeter?",
+                            "⏺ Bash(npm test -- --grep router)",
+                            "Do you want to run this command in ~/dev/api-server?",
                             "❯ 1. Yes, allow",
                             "  2. Yes, and don't ask again for this session",
                             "  3. No, cancel (Esc)",
                         ],
-                        contextPercentUsed: 34,
-                        gitDiff: GitDiffSummary(changedFiles: 2, insertions: 64, deletions: 18)
+                        contextPercentUsed: 64,
+                        gitDiff: GitDiffSummary(changedFiles: 3, insertions: 142, deletions: 28)
                     ),
                     AgentActivityItem(
                         id: "demo-copilot",
                         family: .copilot,
-                        workspace: "Orimaton",
-                        cwdPath: "/Users/yyc/code/Orimaton",
-                        title: "Fix Codex Stream Disconnection",
+                        workspace: "auth-gateway",
+                        cwdPath: "~/dev/auth-gateway",
+                        title: "Fix OAuth token refresh race condition",
                         status: .completed,
                         isUnreadCompletion: true,
                         detail: en ? "Completed" : "已完成",
@@ -307,19 +326,19 @@ final class AgentActivityTracker {
                         tty: nil,
                         rexPane: nil,
                         terminalPreviewLines: [
-                            en ? "✓ Fixed empty stream reconnect logic and passed unit tests" : "✓ 已修复空流断开重连逻辑并通过单元验证",
-                            "  Updated ~/.codex/copilot-bridge.py (+42 -9)",
+                            en ? "✓ Fixed token refresh lock and passed all unit tests" : "✓ 已修复 Token 刷新锁并通过全部单元测试",
+                            "  Updated src/middleware/oauth.ts (+18 -4)",
                             "  Worked for 42s · All checks passed",
                         ],
-                        contextPercentUsed: 12,
-                        gitDiff: GitDiffSummary(changedFiles: 1, insertions: 42, deletions: 9)
+                        contextPercentUsed: 22,
+                        gitDiff: GitDiffSummary(changedFiles: 1, insertions: 18, deletions: 4)
                     ),
                     AgentActivityItem(
                         id: "demo-agy",
                         family: .antigravity,
-                        workspace: "Papers",
-                        cwdPath: "/Users/yyc/code/Papers",
-                        title: en ? "Embodied AI simulation benchmark & asset survey" : "具身智能行业仿真验证与开源仿真资产调研",
+                        workspace: "web-client",
+                        cwdPath: "~/dev/web-client",
+                        title: en ? "GraphQL schema & codegen pipeline" : "GraphQL Schema 与代码生成管线",
                         status: .idle,
                         isUnreadCompletion: false,
                         detail: en ? "Terminal idle" : "终端待命",
@@ -328,10 +347,9 @@ final class AgentActivityTracker {
                         tty: "ttys005",
                         rexPane: nil,
                         terminalPreviewLines: [
-                            en ? "• Survey report generated at docs/embodied-sim-benchmark.md" : "• 调研报告已生成至 docs/embodied-sim-benchmark.md",
-                            en ? "  Includes Isaac Lab, MuJoCo, and Genesis comparison" : "  包含 Isaac Lab、MuJoCo 与 Genesis 资产对比",
+                            en ? "• Generated typed hooks in src/graphql/generated.ts" : "• 已在 src/graphql/generated.ts 生成类型化 Hooks",
                         ],
-                        contextPercentUsed: 9
+                        contextPercentUsed: 15
                     ),
                 ],
                 hadNewUnreadCompletion: isInitialDemoPoll,
@@ -525,6 +543,23 @@ final class AgentActivityTracker {
         }.value
     }
 
+    func launchWorkspaceSession(family: AgentFamily, workspace: LaunchWorkspaceItem, customCommand: String) async -> Bool {
+        if let sshTarget = workspace.sshTarget, !sshTarget.isEmpty {
+            return await Task.detached(priority: .userInitiated) {
+                Self.performRexSSHLaunch(
+                    family: family,
+                    sshTarget: sshTarget,
+                    remotePath: workspace.path,
+                    customCommand: customCommand
+                )
+            }.value
+        } else {
+            return await Task.detached(priority: .userInitiated) {
+                Self.performRexLaunch(family: family, cwdPath: workspace.path, customCommand: customCommand)
+            }.value
+        }
+    }
+
     func resumeHistoricalSession(_ item: AgentHistorySessionItem, baseCommand: String) async -> Bool {
         let resumeCommand = Self.buildResumeCommand(for: item, baseCommand: baseCommand)
         return await Task.detached(priority: .userInitiated) {
@@ -578,9 +613,9 @@ final class AgentActivityTracker {
                     id: "claude:demo-hist-1",
                     sessionID: "demo-uuid-claude-0001",
                     family: .claude,
-                    title: en ? "Refactor menu bar inline reply & warm cache timer" : "重构菜单栏内联回复与热缓存倒计时",
-                    workspace: "AgentMeter",
-                    cwdPath: "/Users/yyc/code/AgentMeter",
+                    title: en ? "Async connection pool & retry backoff" : "异步连接池与重试退避策略优化",
+                    workspace: "api-server",
+                    cwdPath: "~/dev/api-server",
                     gitBranch: "main",
                     updatedAt: now.addingTimeInterval(-3600 * 2)
                 ),
@@ -589,8 +624,8 @@ final class AgentActivityTracker {
                     sessionID: "demo-uuid-codex-0002",
                     family: .codex,
                     title: en ? "Optimize lock-free work stealing scheduler latency" : "优化无锁 work-stealing 调度器延迟",
-                    workspace: "scheduler-kernel",
-                    cwdPath: "/Users/yyc/code/scheduler-kernel",
+                    workspace: "runtime-rs",
+                    cwdPath: "~/dev/runtime-rs",
                     gitBranch: "feat/lockfree",
                     updatedAt: now.addingTimeInterval(-3600 * 18)
                 ),
@@ -600,7 +635,7 @@ final class AgentActivityTracker {
                     family: .copilot,
                     title: en ? "Fix OAuth token refresh middleware race condition" : "修复 OAuth Token 刷新中间件竞态问题",
                     workspace: "auth-gateway",
-                    cwdPath: "/Users/yyc/code/auth-gateway",
+                    cwdPath: "~/dev/auth-gateway",
                     gitBranch: nil,
                     updatedAt: now.addingTimeInterval(-86400 * 2)
                 ),
@@ -617,41 +652,79 @@ final class AgentActivityTracker {
         }.value
     }
 
-    func discoverRecentWorkspaces(liveItems: [AgentActivityItem]) -> [String] {
+    func discoverLaunchWorkspaceItems(liveItems: [AgentActivityItem]) -> [LaunchWorkspaceItem] {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        var seen = Set<String>()
-        var result: [String] = []
+        let sshConfig = Self.parseSSHConfig(home: home)
+        var seenIDs = Set<String>()
+        var seenSSHHosts = Set<String>()
+        var result: [LaunchWorkspaceItem] = []
 
-        func appendIfValid(_ rawPath: String) {
+        func appendLocalIfValid(_ rawPath: String) {
             let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty, trimmed != "/" else { return }
             let standardized = URL(fileURLWithPath: trimmed).standardizedFileURL.path
-            guard !seen.contains(standardized) else { return }
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: standardized, isDirectory: &isDir), isDir.boolValue else {
                 return
             }
-            seen.insert(standardized)
-            result.append(standardized)
+            let item = LaunchWorkspaceItem(path: standardized, sshTarget: nil)
+            guard !seenIDs.contains(item.id) else { return }
+            seenIDs.insert(item.id)
+            result.append(item)
         }
 
-        // 1. User-saved recent/favorite workspaces
-        if let saved = UserDefaults.standard.stringArray(forKey: "recentLaunchWorkspaces") {
-            for path in saved { appendIfValid(path) }
+        func appendSSHIfValid(host rawHost: String, remotePath rawPath: String) {
+            let trimmedHost = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedHost.isEmpty else { return }
+            let canonicalHost = Self.resolveSSHHostAlias(trimmedHost, ipToAlias: sshConfig.ipToAlias)
+            let trimmedPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalizedPath = trimmedPath.isEmpty ? "~" : trimmedPath
+            let item = LaunchWorkspaceItem(path: normalizedPath, sshTarget: canonicalHost)
+            guard !seenIDs.contains(item.id) else { return }
+            seenIDs.insert(item.id)
+            seenSSHHosts.insert(canonicalHost)
+            result.append(item)
         }
 
-        // 2. Currently active local agent sessions
-        for item in liveItems where item.sshTarget == nil {
-            appendIfValid(item.cwdPath)
+        // 1. User-saved recent launch workspace records (supports both local and SSH)
+        if let savedRecords = UserDefaults.standard.array(forKey: "recentLaunchWorkspaceRecords") as? [[String: String]] {
+            for rec in savedRecords {
+                let path = rec["path"] ?? ""
+                if let ssh = rec["ssh"], !ssh.isEmpty {
+                    appendSSHIfValid(host: ssh, remotePath: path)
+                } else {
+                    appendLocalIfValid(path)
+                }
+            }
+        } else if let legacyLocal = UserDefaults.standard.stringArray(forKey: "recentLaunchWorkspaces") {
+            for path in legacyLocal {
+                appendLocalIfValid(path)
+            }
         }
 
-        // 3. Recent Codex thread cwds from SQLite
+        // 2. Currently active live sessions (both local and remote SSH)
+        for item in liveItems {
+            if let ssh = item.sshTarget, !ssh.isEmpty {
+                appendSSHIfValid(host: ssh, remotePath: item.cwdPath)
+            } else {
+                appendLocalIfValid(item.cwdPath)
+            }
+        }
+
+        // 3. Configured SSH hosts from ~/.ssh/config
+        for host in sshConfig.hosts {
+            if !seenSSHHosts.contains(host) {
+                appendSSHIfValid(host: host, remotePath: "~")
+            }
+        }
+
+        // 4. Recent Codex thread cwds from SQLite
         let codexTitles = Self.loadCodexTitles(home: home)
         for cwd in codexTitles.byCwd.keys.sorted() {
-            appendIfValid(cwd)
+            appendLocalIfValid(cwd)
         }
 
-        // 4. Common fallback directories (~/code subdirectories & home)
+        // 5. Common fallback directories (~/code subdirectories & home)
         let codeDir = home.appendingPathComponent("code")
         if let subdirs = try? FileManager.default.contentsOfDirectory(
             at: codeDir,
@@ -664,13 +737,62 @@ final class AgentActivityTracker {
                 return (url.path, vals.contentModificationDate ?? .distantPast)
             }.sorted { $0.1 > $1.1 }
             for (path, _) in sorted.prefix(6) {
-                appendIfValid(path)
+                appendLocalIfValid(path)
             }
         }
-        appendIfValid(codeDir.path)
-        appendIfValid(home.path)
+        appendLocalIfValid(codeDir.path)
+        appendLocalIfValid(home.path)
 
-        return Array(result.prefix(8))
+        return Array(result.prefix(16))
+    }
+
+    private nonisolated static func parseSSHConfig(home: URL) -> (hosts: [String], ipToAlias: [String: String]) {
+        let configURL = home.appendingPathComponent(".ssh/config")
+        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
+            return ([], [:])
+        }
+        var hosts: [String] = []
+        var ipToAlias: [String: String] = [:]
+        var currentAliases: [String] = []
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let parts = trimmed.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "=" }).map(String.init)
+            guard parts.count >= 2 else { continue }
+            let key = parts[0].lowercased()
+            if key == "host" {
+                currentAliases = []
+                for token in parts.dropFirst() {
+                    guard !token.contains("*"), !token.contains("?"), !token.hasPrefix("!") else { continue }
+                    currentAliases.append(token)
+                    if !hosts.contains(token) {
+                        hosts.append(token)
+                    }
+                }
+            } else if key == "hostname", let firstAlias = currentAliases.first {
+                let hostNameVal = parts[1]
+                if !hostNameVal.isEmpty {
+                    ipToAlias[hostNameVal] = firstAlias
+                }
+            }
+        }
+        return (hosts, ipToAlias)
+    }
+
+    private nonisolated static func resolveSSHHostAlias(_ target: String, ipToAlias: [String: String]) -> String {
+        let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let alias = ipToAlias[trimmed] {
+            return alias
+        }
+        if let atIdx = trimmed.firstIndex(of: "@") {
+            let hostPart = String(trimmed[trimmed.index(after: atIdx)...])
+            if let alias = ipToAlias[hostPart] {
+                return alias
+            }
+        }
+        return trimmed
     }
 
     func closeSession(_ item: AgentActivityItem) async -> Bool {
@@ -916,12 +1038,14 @@ final class AgentActivityTracker {
         results.append(contentsOf: agySessions)
 
         // 5. Rex panes reporting agent status via OSC 7501 (e.g., remote SSH sessions running Codex/Claude/Copilot/Antigravity)
+        let sshConfig = parseSSHConfig(home: home)
         let coveredPIDs = Set(results.compactMap(\.pid))
         for (pid, rexEntry) in rexMap where !coveredPIDs.contains(pid) {
             guard let family = rexEntry.detectedFamily else { continue }
             let en = AppLanguage.current == .english
             let status = rexEntry.inferredStatus
-            let wsName = URL(fileURLWithPath: rexEntry.cwdPath).lastPathComponent
+            let effectiveCwd = rexEntry.isSSH ? (rexEntry.remoteCwdPath ?? "~") : rexEntry.cwdPath
+            let wsName = URL(fileURLWithPath: effectiveCwd).lastPathComponent
             let baseTitle = rexEntry.cleanTitle ?? rexEntry.latestScreenPrompt ?? (en ? "\(family.shortName) Session" : "\(family.shortName) 会话")
             let displayTitle: String = {
                 if rexEntry.isSSH, !baseTitle.uppercased().hasPrefix("SSH ") && !baseTitle.uppercased().hasPrefix("[SSH]") {
@@ -929,13 +1053,14 @@ final class AgentActivityTracker {
                 }
                 return baseTitle
             }()
+            let resolvedSSHTarget = rexEntry.sshTarget.map { resolveSSHHostAlias($0, ipToAlias: sshConfig.ipToAlias) }
             results.append(
                 AgentActivityItem(
                     id: "rex-block-\(rexEntry.location.blockID)",
                     family: family,
-                    workspace: wsName.isEmpty || wsName == "/" ? family.shortName : wsName,
-                    cwdPath: rexEntry.cwdPath,
-                    sshTarget: rexEntry.sshTarget,
+                    workspace: wsName.isEmpty || wsName == "/" || wsName == "~" ? family.shortName : wsName,
+                    cwdPath: effectiveCwd,
+                    sshTarget: resolvedSSHTarget,
                     title: displayTitle,
                     status: status,
                     isFocusedInHost: rexEntry.isFocusedInActiveWindow,
@@ -964,7 +1089,10 @@ final class AgentActivityTracker {
                     results[idx].contextPercentUsed = rexEntry.contextPercentUsed
                 }
                 if rexEntry.isSSH {
-                    results[idx].sshTarget = rexEntry.sshTarget
+                    results[idx].sshTarget = rexEntry.sshTarget.map { resolveSSHHostAlias($0, ipToAlias: sshConfig.ipToAlias) }
+                    if let remoteCwd = rexEntry.remoteCwdPath, !remoteCwd.isEmpty {
+                        results[idx].cwdPath = remoteCwd
+                    }
                     if !results[idx].title.uppercased().hasPrefix("SSH ") && !results[idx].title.uppercased().hasPrefix("[SSH]") {
                         results[idx].title = "SSH · \(results[idx].title)"
                     }
@@ -2334,6 +2462,33 @@ final class AgentActivityTracker {
                             return min(100, max(0, 100 - leftVal))
                         }
                     }
+                }
+            }
+            return nil
+        }
+
+        var remoteCwdPath: String? {
+            if let tail = screenTail {
+                for line in tail.split(separator: "\n").reversed().prefix(20) {
+                    let parts = line.components(separatedBy: " · ")
+                    if parts.count >= 2 {
+                        for part in parts {
+                            let p = part.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if (p.hasPrefix("/") || p.hasPrefix("~/") || p == "~"),
+                               !p.contains(" "),
+                               p.count <= 140 {
+                                return p
+                            }
+                        }
+                    }
+                }
+            }
+            if let title = rawTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+               title.contains("@"),
+               let colonIdx = title.lastIndex(of: ":") {
+                let pathPart = String(title[title.index(after: colonIdx)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if pathPart == "~" || pathPart.hasPrefix("~/") || pathPart.hasPrefix("/") {
+                    return pathPart
                 }
             }
             return nil
@@ -3828,6 +3983,152 @@ final class AgentActivityTracker {
               options = {
                 cwd = \(luaQuote(resolvedCwd)),
                 initial_input = \(luaQuote(cmdLine)),
+                exit = { on_completion = false }
+              }
+            }
+          }
+        })
+        local wid = res and res.window_id
+        local bid = res and res.block_ids and res.block_ids[1]
+        if wid then
+          pcall(rex.call, "session.focus_window", {session_id = sid, window_id = wid})
+        end
+        if bid then
+          pcall(rex.call, "session.focus_block", {session_id = sid, block_id = bid})
+        end
+
+        local view = rex.call("session.view", {session_id = sid})
+        local win_idx = nil
+        if wid and view and view.windows then
+          for idx, w in ipairs(view.windows) do
+            if w.window_id == wid then win_idx = idx; break end
+          end
+        end
+
+        for _, c in ipairs(clients) do
+          if c.info and c.info.kind == "app" and c.connection_state == "connected" then
+            pcall(rex.call, "client.perform", {
+              client_id = c.client_id,
+              action = "session.select",
+              args = {session_id = sid, window_id = wid},
+              timeout_ms = 1500
+            })
+            if win_idx then
+              pcall(rex.call, "client.perform", {
+                client_id = c.client_id,
+                action = "client.tab.goto",
+                args = {index = win_idx},
+                timeout_ms = 1500
+              })
+            end
+          end
+        end
+        return true
+        """
+
+        let proc = Process()
+        proc.executableURL = rexBin
+        var env = ProcessInfo.processInfo.environment
+        env.removeValue(forKey: "REX_SESSION")
+        env.removeValue(forKey: "REX_BLOCK")
+        env.removeValue(forKey: "REX_SERVER")
+        proc.environment = env
+        proc.arguments = ["--autostart=true", "--timeout", "3s", "do", "-e", script]
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+        } catch {
+            return false
+        }
+
+        return activateRexApp()
+    }
+
+    private nonisolated static func performRexSSHLaunch(
+        family: AgentFamily,
+        sshTarget: String,
+        remotePath: String,
+        customCommand: String
+    ) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        guard let rexBin = resolveRexBinary(home: home) else { return false }
+        ensureRexRemoteControlEnabled()
+        dismissMenuBarPanelWindows()
+
+        let cleanHost = sshTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanHost.isEmpty else { return false }
+
+        let trimmedPath = remotePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dirSuffix: String = {
+            if trimmedPath.isEmpty || trimmedPath == "~" || trimmedPath == "/" {
+                return cleanHost
+            }
+            let lastComp = URL(fileURLWithPath: trimmedPath).lastPathComponent
+            return lastComp.isEmpty ? cleanHost : "\(cleanHost) · \(lastComp)"
+        }()
+        let tabLabel = "\(family.shortName) · \(dirSuffix)"
+
+        let trimmedCmd = customCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveCmd = trimmedCmd.isEmpty ? family.defaultLaunchCommand : trimmedCmd
+
+        let cdClause: String = {
+            if trimmedPath.isEmpty || trimmedPath == "~" {
+                return ""
+            }
+            if trimmedPath.hasPrefix("~/") {
+                let rel = String(trimmedPath.dropFirst(2))
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                return "cd \"$HOME/\(rel)\" && "
+            }
+            let esc = trimmedPath
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            return "cd \"\(esc)\" && "
+        }()
+
+        let escapedSingleQuotesCmd = effectiveCmd.replacingOccurrences(of: "'", with: "'\\''")
+        let remoteShellPayload = "\(cdClause)exec \\$SHELL -lic '\(escapedSingleQuotesCmd)'"
+        let sshCommandLine = "ssh -t \(cleanHost) \"\(remoteShellPayload)\"\n"
+
+        let script = """
+        local clients = rex.call("client.list").clients or {}
+        local sid = nil
+        for _, c in ipairs(clients) do
+          if c.info and c.info.kind == "app" and c.connection_state == "connected" then
+            if c.session_ids and c.session_ids[1] then
+              sid = c.session_ids[1]
+              break
+            end
+          end
+        end
+        if not sid then
+          local sessions = rex.call("session.list").sessions or {}
+          if #sessions > 0 then
+            sid = sessions[1].session_id
+          end
+        end
+        if sid then
+          rex.call("session.attach", {session_id = sid})
+        else
+          local created = rex.call("session.create", {label = \(luaQuote(cleanHost))})
+          sid = created and created.session_id
+        end
+        if not sid then return false end
+
+        local res = rex.call("session.new_window", {
+          session_id = sid,
+          window_label = \(luaQuote(tabLabel)),
+          focus = true,
+          layout = {
+            block = {
+              flavor = "com.superlogical.terminal.shell",
+              label = \(luaQuote("\(family.shortName)@\(cleanHost)")),
+              options = {
+                cwd = \(luaQuote(home.path)),
+                initial_input = \(luaQuote(sshCommandLine)),
                 exit = { on_completion = false }
               }
             }
