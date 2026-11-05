@@ -50,6 +50,7 @@ struct AgentMeterPanel: View {
     @State private var hoveredApprovePrimaryID: String?
     @State private var hoveredApproveSecondaryID: String?
     @State private var hoveredDenyID: String?
+    @State private var hoveredInterruptID: String?
     @State private var hoveredReplyToggleID: String?
     @State private var hoveredReplyFieldID: String?
     @State private var hoveredQuickCompactID: String?
@@ -777,6 +778,7 @@ struct AgentMeterPanel: View {
         let isApprove1Hovered = hoveredApprovePrimaryID == item.id
         let isApprove2Hovered = hoveredApproveSecondaryID == item.id
         let isDenyHovered = hoveredDenyID == item.id
+        let isInterruptHovered = hoveredInterruptID == item.id
         let isReplyToggleHovered = hoveredReplyToggleID == item.id
         let isReplyFieldHovered = hoveredReplyFieldID == item.id
         let isQuickCompactHovered = hoveredQuickCompactID == item.id
@@ -786,6 +788,7 @@ struct AgentMeterPanel: View {
             || isApprove1Hovered
             || isApprove2Hovered
             || isDenyHovered
+            || isInterruptHovered
             || isReplyToggleHovered
             || isReplyFieldHovered
             || isQuickCompactHovered
@@ -805,6 +808,8 @@ struct AgentMeterPanel: View {
                 return expandedReplyAgentID == item.id || isReplyFocused || hasDraft
             }
         }()
+        let isLongRunning = item.isLongRunningWorking(now: now)
+        let showWorkingControlBar = item.status == .working && (isHighlighted || isLongRunning || showInlineReply)
         let hasPreview = !item.terminalPreviewLines.isEmpty || showInlineReply
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -832,6 +837,8 @@ struct AgentMeterPanel: View {
             // Inline Permission Approval Bar when the session is waiting for confirmation
             if item.status == .needsInput {
                 inlineApprovalReserveBar(dark: dark)
+            } else if showWorkingControlBar {
+                inlineWorkingReserveBar(item: item, isLongRunning: isLongRunning, dark: dark)
             }
         }
         .padding(.horizontal, 14)
@@ -869,7 +876,7 @@ struct AgentMeterPanel: View {
                     dark: dark
                 )
                 .padding(.horizontal, 24)
-                .padding(.bottom, item.status == .needsInput ? 56.5 : 20.5)
+                .padding(.bottom, (item.status == .needsInput || showWorkingControlBar) ? 56.5 : 20.5)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -882,6 +889,14 @@ struct AgentMeterPanel: View {
                     isReplyToggleHovered: isReplyToggleHovered,
                     showInlineReply: showInlineReply,
                     dark: dark
+                )
+                .padding(.bottom, 13)
+                .padding(.trailing, 14)
+            } else if showWorkingControlBar {
+                inlineWorkingActionButtons(
+                    item: item,
+                    dark: dark,
+                    showInlineReply: showInlineReply
                 )
                 .padding(.bottom, 13)
                 .padding(.trailing, 14)
@@ -907,6 +922,7 @@ struct AgentMeterPanel: View {
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16), value: isHighlighted)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: isExpanded)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: showInlineReply)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: showWorkingControlBar)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isCloseHovered)
         .help(item.title)
         .id(item.id)
@@ -921,6 +937,9 @@ struct AgentMeterPanel: View {
         now: Date
     ) -> some View {
         let en = model.language == .english
+        let isLongRunning = item.isLongRunningWorking(now: now)
+        let amberColor = FlatPalette.amberAlertForeground(dark: dark)
+        let effectiveStatusColor: Color = (item.status == .working && isLongRunning) ? amberColor : statusColor
         let statusLabel: String = {
             switch item.status {
             case .needsInput: return en ? "Confirm" : "待确认"
@@ -981,11 +1000,17 @@ struct AgentMeterPanel: View {
                         if item.status == .needsInput {
                             AgentPulseDot(status: .needsInput, size: 5)
                         } else if item.status == .working {
-                            AgentPulseDot(status: .working, size: 5)
+                            if isLongRunning {
+                                Image(systemName: "clock.badge.exclamationmark")
+                                    .font(.system(size: 9.5, weight: .bold))
+                                    .foregroundStyle(amberColor)
+                            } else {
+                                AgentPulseDot(status: .working, size: 5)
+                            }
                         } else if item.status == .completed {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 8.5, weight: .bold))
-                                .foregroundStyle(statusColor)
+                                .foregroundStyle(effectiveStatusColor)
                         } else {
                             Circle()
                                 .fill(.secondary.opacity(0.45))
@@ -993,12 +1018,12 @@ struct AgentMeterPanel: View {
                         }
                         Text(statusLabel)
                             .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(item.status == .idle ? .secondary : statusColor)
+                            .foregroundStyle(item.status == .idle ? .secondary : effectiveStatusColor)
 
                         if let elapsedText {
                             Text(elapsedText)
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle((item.status == .idle ? Color.secondary : statusColor).opacity(0.82))
+                                .foregroundStyle((item.status == .idle ? Color.secondary : effectiveStatusColor).opacity(0.82))
                                 .monospacedDigit()
                                 .contentTransition(.numericText())
                         }
@@ -1007,10 +1032,19 @@ struct AgentMeterPanel: View {
                     .padding(.vertical, 3.5)
                     .background {
                         Capsule()
-                            .fill(statusBadgeFill(item.status, dark: dark))
+                            .fill(
+                                (item.status == .working && isLongRunning)
+                                    ? FlatPalette.amberAlertBackground(dark: dark)
+                                    : statusBadgeFill(item.status, dark: dark)
+                            )
                             .overlay {
                                 Capsule()
-                                    .strokeBorder(statusBadgeStroke(item.status, dark: dark), lineWidth: 1)
+                                    .strokeBorder(
+                                        (item.status == .working && isLongRunning)
+                                            ? amberColor.opacity(dark ? 0.38 : 0.28)
+                                            : statusBadgeStroke(item.status, dark: dark),
+                                        lineWidth: 1
+                                    )
                             }
                     }
                     .fixedSize(horizontal: true, vertical: false)
@@ -1089,6 +1123,8 @@ struct AgentMeterPanel: View {
         item: AgentActivityItem,
         familyColor: Color
     ) -> some View {
+        let dark = (model.appearanceMode.colorScheme ?? systemColorScheme) == .dark
+        let en = model.language == .english
         let displayPath: String = {
             if !item.cwdPath.isEmpty {
                 return abbreviateHomePath(item.cwdPath)
@@ -1133,6 +1169,73 @@ struct AgentMeterPanel: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+            }
+
+            if let branch = item.gitBranch, !branch.isEmpty {
+                Text("·")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.tertiary)
+
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
+                    Text(branch)
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    if item.isGitWorktree {
+                        Text("WT")
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .foregroundStyle(familyColor)
+                            .padding(.horizontal, 4.5)
+                            .padding(.vertical, 1)
+                            .background(
+                                Capsule()
+                                    .fill(familyColor.opacity(dark ? 0.18 : 0.11))
+                                    .overlay(
+                                        Capsule()
+                                            .strokeBorder(familyColor.opacity(dark ? 0.36 : 0.24), lineWidth: 1)
+                                    )
+                            )
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                }
+                .help(
+                    item.isGitWorktree
+                        ? (en ? "Isolated Git worktree · branch: \(branch)" : "独立 Git Worktree 工作区 · 分支：\(branch)")
+                        : (en ? "Git branch: \(branch)" : "Git 分支：\(branch)")
+                )
+            }
+
+            if item.hasWorkspaceCollision {
+                let conflictFg = FlatPalette.conflictWarningForeground(dark: dark)
+                let conflictBg = FlatPalette.conflictWarningBackground(dark: dark)
+                HStack(spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 8, weight: .bold))
+                    Text(en ? "Conflict" : "目录冲突")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .foregroundStyle(conflictFg)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1.5)
+                .background(
+                    Capsule()
+                        .fill(conflictBg)
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(conflictFg.opacity(dark ? 0.40 : 0.28), lineWidth: 1)
+                        )
+                )
+                .fixedSize(horizontal: true, vertical: false)
+                .help(
+                    en
+                        ? "\(item.collisionPeerCount + 1) active sessions share this checkout (\(displayPath)) — risk of concurrent write conflicts"
+                        : "检测到 \(item.collisionPeerCount + 1) 个会话共用同一工作区目录（\(displayPath)），可能产生并发写冲突"
+                )
             }
         }
     }
@@ -1519,6 +1622,147 @@ struct AgentMeterPanel: View {
                 .frame(width: 224, height: 26)
         }
         .padding(.leading, 4)
+    }
+
+    private func inlineWorkingReserveBar(
+        item: AgentActivityItem,
+        isLongRunning: Bool,
+        dark: Bool
+    ) -> some View {
+        let en = model.language == .english
+        let amber = FlatPalette.amberAlertForeground(dark: dark)
+        let labelColor = isLongRunning ? amber : FlatPalette.inkSecondary(dark: dark)
+        return HStack(spacing: 5.5) {
+            if isLongRunning {
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(amber)
+            } else {
+                Circle()
+                    .fill(FlatPalette.blue)
+                    .frame(width: 5, height: 5)
+            }
+            Text(
+                isLongRunning
+                    ? (en ? "Long-running task · check if stalled" : "长时运行任务 · 请留意是否卡死")
+                    : (en ? "Running task in Rex" : "正在 Rex 中执行任务")
+            )
+            .font(.system(size: 10.5, weight: isLongRunning ? .semibold : .medium))
+            .foregroundStyle(labelColor)
+            .lineLimit(1)
+            .truncationMode(.tail)
+
+            Spacer(minLength: 4)
+            // Space reserved for the working action dock overlay
+            Color.clear
+                .frame(width: 118, height: 26)
+        }
+        .padding(.leading, 4)
+    }
+
+    private func inlineWorkingActionButtons(
+        item: AgentActivityItem,
+        dark: Bool,
+        showInlineReply: Bool
+    ) -> some View {
+        let en = model.language == .english
+        let isInterruptHovered = hoveredInterruptID == item.id
+        let isReplyToggleHovered = hoveredReplyToggleID == item.id
+        let familyColor = item.family.accentColor(dark: dark)
+
+        let stopFg = FlatPalette.dangerInterruptForeground(dark: dark)
+        let stopBg = FlatPalette.dangerInterruptBackground(dark: dark, hovered: isInterruptHovered)
+
+        let replyFg = (showInlineReply || isReplyToggleHovered) ? familyColor : FlatPalette.inkSecondary(dark: dark)
+        let replyBg = (showInlineReply || isReplyToggleHovered)
+            ? familyColor.opacity(dark ? 0.20 : 0.12)
+            : (dark ? Color.white.opacity(0.05) : Color.white)
+
+        return HStack(spacing: 3) {
+            // 1. Interrupt Button: Stop ^C / 中断 ^C
+            HStack(spacing: 4) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 8, weight: .bold))
+                Text(en ? "Stop" : "中断")
+                    .font(.system(size: 10.5, weight: .semibold))
+                kbdBadge("^C", tint: stopFg, dark: dark)
+            }
+            .foregroundStyle(stopFg)
+            .padding(.leading, 8)
+            .padding(.trailing, 6)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(stopBg)
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(stopFg.opacity(dark ? 0.38 : 0.28), lineWidth: 1)
+                    )
+            )
+            .overlay {
+                PointingHandCursorOverlay(
+                    tooltip: en
+                        ? "Send Esc / Ctrl+C to interrupt current turn without closing session"
+                        : "发送 Esc / Ctrl+C 中断当前执行轮次（不关闭会话窗口）",
+                    onHoverChange: { hovering in
+                        hoveredInterruptID = hovering ? item.id : (hoveredInterruptID == item.id ? nil : hoveredInterruptID)
+                    },
+                    onClick: {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                            hoveredInterruptID = nil
+                            expandedReplyAgentID = nil
+                            focusedReplyAgentID = nil
+                            model.interruptAgentSession(item)
+                        }
+                    }
+                )
+            }
+
+            // 2. Custom Reply Toggle Button
+            Image(systemName: "text.bubble")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(replyFg)
+                .frame(width: 24, height: 21)
+                .background(
+                    Capsule()
+                        .fill(replyBg)
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(
+                                    showInlineReply ? familyColor.opacity(0.4) : FlatPalette.hairlineBorder(dark: dark),
+                                    lineWidth: 1
+                                )
+                        )
+                )
+                .overlay {
+                    PointingHandCursorOverlay(
+                        tooltip: en ? "Type a custom reply to Rex" : "输入自定义回复发送至 Rex",
+                        onHoverChange: { hovering in
+                            hoveredReplyToggleID = hovering ? item.id : (hoveredReplyToggleID == item.id ? nil : hoveredReplyToggleID)
+                        },
+                        onClick: {
+                            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                                if expandedReplyAgentID == item.id {
+                                    expandedReplyAgentID = nil
+                                    focusedReplyAgentID = nil
+                                } else {
+                                    expandedReplyAgentID = item.id
+                                    focusedReplyAgentID = item.id
+                                }
+                            }
+                        }
+                    )
+                }
+        }
+        .padding(2.5)
+        .background(
+            Capsule()
+                .fill(FlatPalette.trackBackground(dark: dark))
+                .overlay(
+                    Capsule()
+                        .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
+                )
+        )
     }
 
     private func kbdBadge(_ text: String, tint: Color, dark: Bool) -> some View {

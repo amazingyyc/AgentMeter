@@ -130,14 +130,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if ProcessInfo.processInfo.arguments.contains("--dump") {
+            let isDemoFlag = ProcessInfo.processInfo.arguments.contains("--demo")
             Task { @MainActor in
                 let tracker = AgentActivityTracker()
-                let res = await tracker.poll()
+                let res = await tracker.poll(isDemo: isDemoFlag)
                 for item in res.items {
                     let ctxStr = item.contextPercentUsed.map { "\($0)%" } ?? "-"
                     let diffStr = item.gitDiff.map { "+\($0.insertions)/-\($0.deletions)(\($0.changedFiles)f)" } ?? "-"
+                    let branchStr = item.gitBranch ?? "-"
+                    let collisionCount = item.hasWorkspaceCollision ? item.collisionPeerCount : 0
                     let previewStr = item.terminalPreviewLines.joined(separator: " // ")
-                    print("DUMP_ITEM | id=\(item.id) | family=\(item.family.rawValue) | status=\(item.status.rawValue) | pid=\(item.pid ?? 0) | ctx=\(ctxStr) | diff=\(diffStr) | title=\(item.title) | subtitle=\(item.subtitleText()) | preview=\(previewStr)")
+                    print("DUMP_ITEM | id=\(item.id) | family=\(item.family.rawValue) | status=\(item.status.rawValue) | pid=\(item.pid ?? 0) | branch=\(branchStr) | worktree=\(item.isGitWorktree) | collision=\(collisionCount) | ctx=\(ctxStr) | diff=\(diffStr) | title=\(item.title) | subtitle=\(item.subtitleText()) | preview=\(previewStr)")
                 }
                 NSApplication.shared.terminate(nil)
             }

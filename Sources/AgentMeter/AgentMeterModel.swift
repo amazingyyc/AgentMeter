@@ -260,6 +260,8 @@ final class AgentMeterModel {
     }
 
     func respondToPermission(_ item: AgentActivityItem, choice: AgentApprovalChoice) {
+        let previousActivities = agentActivities
+        let previousUnseenCompletion = hasUnseenMenuBarCompletion
         let en = language == .english
         if let idx = agentActivities.firstIndex(where: { $0.id == item.id }) {
             agentActivities[idx].isUnreadCompletion = false
@@ -277,15 +279,25 @@ final class AgentMeterModel {
             hasUnseenMenuBarCompletion = false
         }
         Task { @MainActor in
-            _ = await agentTracker.respondToPermissionPrompt(item, choice: choice)
-            try? await Task.sleep(for: .milliseconds(650))
-            await pollAgents()
+            let ok = await agentTracker.respondToPermissionPrompt(item, choice: choice)
+            if !isDemo {
+                if !ok {
+                    agentActivities = previousActivities
+                    hasUnseenMenuBarCompletion = previousUnseenCompletion
+                    await pollAgents()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(650))
+                await pollAgents()
+            }
         }
     }
 
     func sendQuickReply(_ item: AgentActivityItem, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let previousActivities = agentActivities
+        let previousUnseenCompletion = hasUnseenMenuBarCompletion
         let en = language == .english
         if let idx = agentActivities.firstIndex(where: { $0.id == item.id }) {
             agentActivities[idx].isUnreadCompletion = false
@@ -298,20 +310,65 @@ final class AgentMeterModel {
             hasUnseenMenuBarCompletion = false
         }
         Task { @MainActor in
-            _ = await agentTracker.sendInlinePrompt(item, text: trimmed)
-            try? await Task.sleep(for: .milliseconds(700))
-            await pollAgents()
+            let ok = await agentTracker.sendInlinePrompt(item, text: trimmed)
+            if !isDemo {
+                if !ok {
+                    agentActivities = previousActivities
+                    hasUnseenMenuBarCompletion = previousUnseenCompletion
+                    await pollAgents()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(700))
+                await pollAgents()
+            }
+        }
+    }
+
+    func interruptAgentSession(_ item: AgentActivityItem) {
+        let previousActivities = agentActivities
+        let previousUnseenCompletion = hasUnseenMenuBarCompletion
+        let en = language == .english
+        if let idx = agentActivities.firstIndex(where: { $0.id == item.id }) {
+            agentActivities[idx].isUnreadCompletion = false
+            agentActivities[idx].status = .idle
+            agentActivities[idx].detail = en ? "Interrupted" : "已中断"
+            agentActivities[idx].updatedAt = Date()
+            agentActivities[idx].terminalPreviewLines.append(en ? "› ^C Interrupted" : "› ^C 已发送中断")
+        }
+        if !agentActivities.contains(where: { $0.isUnreadCompletion }) && activeAgentNeedsInputCount == 0 {
+            hasUnseenMenuBarCompletion = false
+        }
+        Task { @MainActor in
+            let ok = await agentTracker.interruptSession(item)
+            if !isDemo {
+                if !ok {
+                    agentActivities = previousActivities
+                    hasUnseenMenuBarCompletion = previousUnseenCompletion
+                    await pollAgents()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(650))
+                await pollAgents()
+            }
         }
     }
 
     func closeAgentSession(_ item: AgentActivityItem) {
+        let previousActivities = agentActivities
+        let previousUnseenCompletion = hasUnseenMenuBarCompletion
         agentActivities.removeAll { $0.id == item.id }
         if !agentActivities.contains(where: { $0.isUnreadCompletion }) {
             hasUnseenMenuBarCompletion = false
         }
         Task { @MainActor in
-            _ = await agentTracker.closeSession(item)
-            await pollAgents()
+            let ok = await agentTracker.closeSession(item)
+            if !isDemo {
+                if !ok {
+                    agentActivities = previousActivities
+                    hasUnseenMenuBarCompletion = previousUnseenCompletion
+                }
+                await pollAgents()
+            }
         }
     }
 

@@ -170,8 +170,19 @@ struct AgentActivityItem: Identifiable, Equatable, Sendable {
     var terminalPreviewLines: [String] = []
     var contextPercentUsed: Int? = nil
     var gitDiff: GitDiffSummary? = nil
+    var gitBranch: String? = nil
+    var isGitWorktree: Bool = false
+    var hasWorkspaceCollision: Bool = false
+    var collisionPeerCount: Int = 0
 
     static let promptCacheWarmTTLSeconds: Int = 300
+    static let longRunningWorkingThresholdSeconds: Int = 180
+
+    func isLongRunningWorking(now: Date = Date()) -> Bool {
+        guard status == .working else { return false }
+        guard updatedAt > Date(timeIntervalSince1970: 1000) else { return false }
+        return Int(now.timeIntervalSince(updatedAt)) >= Self.longRunningWorkingThresholdSeconds
+    }
 
     func cacheWarmRemainingSeconds(now: Date = Date()) -> Int? {
         guard status != .working else { return nil }
@@ -278,7 +289,7 @@ final class AgentActivityTracker {
                         status: .working,
                         isUnreadCompletion: false,
                         detail: en ? "Running task" : "正在执行任务",
-                        updatedAt: now.addingTimeInterval(-14),
+                        updatedAt: now.addingTimeInterval(-215),
                         pid: 70086,
                         tty: "ttys004",
                         rexPane: nil,
@@ -287,7 +298,9 @@ final class AgentActivityTracker {
                             "  Updated src/scheduler/work_stealing.rs (+64 -22)",
                         ],
                         contextPercentUsed: 38,
-                        gitDiff: GitDiffSummary(changedFiles: 4, insertions: 64, deletions: 22)
+                        gitDiff: GitDiffSummary(changedFiles: 4, insertions: 64, deletions: 22),
+                        gitBranch: "feat/worktree-sched",
+                        isGitWorktree: true
                     ),
                     AgentActivityItem(
                         id: "demo-claude",
@@ -310,7 +323,11 @@ final class AgentActivityTracker {
                             "  3. No, cancel (Esc)",
                         ],
                         contextPercentUsed: 64,
-                        gitDiff: GitDiffSummary(changedFiles: 3, insertions: 142, deletions: 28)
+                        gitDiff: GitDiffSummary(changedFiles: 3, insertions: 142, deletions: 28),
+                        gitBranch: "refactor/router",
+                        isGitWorktree: false,
+                        hasWorkspaceCollision: true,
+                        collisionPeerCount: 1
                     ),
                     AgentActivityItem(
                         id: "demo-copilot",
@@ -331,7 +348,9 @@ final class AgentActivityTracker {
                             "  Worked for 42s · All checks passed",
                         ],
                         contextPercentUsed: 22,
-                        gitDiff: GitDiffSummary(changedFiles: 1, insertions: 18, deletions: 4)
+                        gitDiff: GitDiffSummary(changedFiles: 1, insertions: 18, deletions: 4),
+                        gitBranch: "fix/oauth-race",
+                        isGitWorktree: false
                     ),
                     AgentActivityItem(
                         id: "demo-agy",
@@ -349,7 +368,9 @@ final class AgentActivityTracker {
                         terminalPreviewLines: [
                             en ? "• Generated typed hooks in src/graphql/generated.ts" : "• 已在 src/graphql/generated.ts 生成类型化 Hooks",
                         ],
-                        contextPercentUsed: 15
+                        contextPercentUsed: 15,
+                        gitBranch: "main",
+                        isGitWorktree: false
                     ),
                 ],
                 hadNewUnreadCompletion: isInitialDemoPoll,
@@ -482,6 +503,8 @@ final class AgentActivityTracker {
         previousStates = currentStates
         hasSeededInitialSnapshot = true
 
+        Self.annotateWorkspaceCollisions(&merged, homePath: FileManager.default.homeDirectoryForCurrentUser.path)
+
         merged.sort { lhs, rhs in
             let rankL = Self.sortPriorityRank(for: lhs)
             let rankR = Self.sortPriorityRank(for: rhs)
@@ -516,25 +539,47 @@ final class AgentActivityTracker {
 
     func respondToPermissionPrompt(_ item: AgentActivityItem, choice: AgentApprovalChoice) async -> Bool {
         unreadCompletionIDs.remove(item.id)
-        if choice == .approvePrimary || choice == .approveSecondary {
-            previousStates[item.id] = .working
-            workingAnchorDates[item.id] = Date()
-        } else {
-            previousStates[item.id] = .idle
-        }
-        return await Task.detached(priority: .userInitiated) {
+        let ok = await Task.detached(priority: .userInitiated) {
             Self.performRexApprovalWrite(for: item, choice: choice)
         }.value
+        if ok {
+            if choice == .approvePrimary || choice == .approveSecondary {
+                previousStates[item.id] = .working
+                workingAnchorDates[item.id] = Date()
+            } else {
+                previousStates[item.id] = .idle
+            }
+        }
+        return ok
     }
 
     func sendInlinePrompt(_ item: AgentActivityItem, text: String) async -> Bool {
         unreadCompletionIDs.remove(item.id)
-        recentCompletions.removeValue(forKey: item.id)
-        previousStates[item.id] = .working
-        workingAnchorDates[item.id] = Date()
-        return await Task.detached(priority: .userInitiated) {
+        let ok = await Task.detached(priority: .userInitiated) {
             Self.performRexPromptWrite(for: item, text: text)
         }.value
+        if ok {
+            recentCompletions.removeValue(forKey: item.id)
+            previousStates[item.id] = .working
+            workingAnchorDates[item.id] = Date()
+        }
+        return ok
+    }
+
+    func interruptSession(_ item: AgentActivityItem) async -> Bool {
+        unreadCompletionIDs.remove(item.id)
+        let ok = await Task.detached(priority: .userInitiated) {
+            Self.performRexInterrupt(for: item)
+        }.value
+        if ok {
+            workingStreakCounts.removeValue(forKey: item.id)
+            pendingCompletionConfirmations.removeValue(forKey: item.id)
+            workingAnchorDates.removeValue(forKey: item.id)
+            recentCompletions.removeValue(forKey: item.id)
+            previousStates[item.id] = .idle
+            stableFallbackDates[item.id] = Date()
+        }
+        return ok
     }
 
     func launchNewSession(family: AgentFamily, cwdPath: String, customCommand: String) async -> Bool {
@@ -796,17 +841,20 @@ final class AgentActivityTracker {
     }
 
     func closeSession(_ item: AgentActivityItem) async -> Bool {
-        dismissedIDs[item.id] = Date()
-        previousStates.removeValue(forKey: item.id)
-        workingStreakCounts.removeValue(forKey: item.id)
-        pendingCompletionConfirmations.removeValue(forKey: item.id)
-        workingAnchorDates.removeValue(forKey: item.id)
-        stableFallbackDates.removeValue(forKey: item.id)
-        recentCompletions.removeValue(forKey: item.id)
-        unreadCompletionIDs.remove(item.id)
-        return await Task.detached(priority: .userInitiated) {
+        let ok = await Task.detached(priority: .userInitiated) {
             Self.performCloseSession(for: item)
         }.value
+        if ok {
+            dismissedIDs[item.id] = Date()
+            previousStates.removeValue(forKey: item.id)
+            workingStreakCounts.removeValue(forKey: item.id)
+            pendingCompletionConfirmations.removeValue(forKey: item.id)
+            workingAnchorDates.removeValue(forKey: item.id)
+            stableFallbackDates.removeValue(forKey: item.id)
+            recentCompletions.removeValue(forKey: item.id)
+            unreadCompletionIDs.remove(item.id)
+        }
+        return ok
     }
 
     private static func sortPriorityRank(for item: AgentActivityItem) -> Int {
@@ -822,7 +870,123 @@ final class AgentActivityTracker {
         }
     }
 
+    // MARK: - Subprocess Execution with Timeout & Local TTY Fallback
+
+    private struct ProcessExecutionResult {
+        let terminationStatus: Int32
+        let outputData: Data
+        let timedOut: Bool
+        var succeeded: Bool { !timedOut && terminationStatus == 0 }
+    }
+
+    private final class ProcessTimeoutBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _timedOut = false
+        var timedOut: Bool {
+            get {
+                lock.lock()
+                defer { lock.unlock() }
+                return _timedOut
+            }
+            set {
+                lock.lock()
+                defer { lock.unlock() }
+                _timedOut = newValue
+            }
+        }
+    }
+
+    private nonisolated static func runProcessWithTimeout(
+        executableURL: URL,
+        arguments: [String],
+        environment: [String: String]? = nil,
+        captureStdout: Bool = false,
+        timeoutSeconds: TimeInterval
+    ) -> ProcessExecutionResult {
+        let proc = Process()
+        proc.executableURL = executableURL
+        proc.arguments = arguments
+        if let environment {
+            proc.environment = environment
+        }
+        proc.standardInput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+
+        let outPipe: Pipe? = captureStdout ? Pipe() : nil
+        if let outPipe {
+            proc.standardOutput = outPipe
+        } else {
+            proc.standardOutput = FileHandle.nullDevice
+        }
+
+        let timeoutBox = ProcessTimeoutBox()
+        let timeoutItem = DispatchWorkItem { [weak proc] in
+            guard let proc, proc.isRunning else { return }
+            timeoutBox.timedOut = true
+            proc.terminate()
+            let pid = proc.processIdentifier
+            if pid > 1 {
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.25) {
+                    _ = Darwin.kill(pid, SIGKILL)
+                }
+            }
+        }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeoutSeconds, execute: timeoutItem)
+
+        do {
+            try proc.run()
+        } catch {
+            timeoutItem.cancel()
+            return ProcessExecutionResult(terminationStatus: -1, outputData: Data(), timedOut: false)
+        }
+
+        let data = outPipe?.fileHandleForReading.readDataToEndOfFile() ?? Data()
+        proc.waitUntilExit()
+        timeoutItem.cancel()
+
+        return ProcessExecutionResult(
+            terminationStatus: proc.terminationStatus,
+            outputData: data,
+            timedOut: timeoutBox.timedOut
+        )
+    }
+
+    private nonisolated static func rexCleanEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        env.removeValue(forKey: "REX_SESSION")
+        env.removeValue(forKey: "REX_BLOCK")
+        env.removeValue(forKey: "REX_SERVER")
+        return env
+    }
+
+    private nonisolated static func writeToLocalTTY(ttyName: String, data: Data) -> Bool {
+        let cleanTTY = ttyName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTTY.isEmpty,
+              !cleanTTY.contains("/"),
+              !cleanTTY.contains(".."),
+              !data.isEmpty else {
+            return false
+        }
+        let devPath = "/dev/\(cleanTTY)"
+        let fd = Darwin.open(devPath, O_WRONLY | O_NOCTTY | O_NONBLOCK)
+        guard fd >= 0 else { return false }
+        defer { _ = Darwin.close(fd) }
+        return data.withUnsafeBytes { rawBuf -> Bool in
+            guard let base = rawBuf.baseAddress else { return false }
+            let written = Darwin.write(fd, base, rawBuf.count)
+            return written == rawBuf.count
+        }
+    }
+
     // MARK: - Background Discovery (Rex Blocks + Live Processes + Session Metadata)
+
+    private struct RemoteGitMetadata: Sendable {
+        let branch: String?
+        let isWorktree: Bool
+        let diff: GitDiffSummary?
+        let gitRoot: String?
+        var isValidResponse: Bool = true
+    }
 
     private final class DiscoveryCache: @unchecked Sendable {
         static let shared = DiscoveryCache()
@@ -835,14 +999,93 @@ final class AgentActivityTracker {
         private var claudeTranscriptCache: [String: (modDate: Date, summary: ClaudeTranscriptSummary)] = [:]
         private var claudeHistoryCache: (modDate: Date, bySession: [String: String])?
         private var gitDiffCache: [String: (timestamp: TimeInterval, summary: GitDiffSummary?)] = [:]
+        private var gitBranchCache: [String: (timestamp: TimeInterval, branch: String?, isWorktree: Bool)] = [:]
+        private var remoteGitCache: [String: (timestamp: TimeInterval, metadata: RemoteGitMetadata)] = [:]
+        private var remoteGitInFlight: Set<String> = []
+        private var lastKnownRemoteCwdByBlock: [String: String] = [:]
+        private var lastGoodRexBlocks: (timestamp: TimeInterval, map: [Int32: RexBlockEntry])?
 
-        func cachedGitDiff(for gitRoot: String, now: TimeInterval, ttl: TimeInterval = 3.5) -> (hit: Bool, summary: GitDiffSummary?) {
+        func cachedRexBlocksFallback(now: TimeInterval, maxAge: TimeInterval = 6.0) -> [Int32: RexBlockEntry]? {
             lock.lock()
             defer { lock.unlock() }
-            if let entry = gitDiffCache[gitRoot], now - entry.timestamp < ttl {
-                return (true, entry.summary)
+            guard let entry = lastGoodRexBlocks, (now - entry.timestamp) < maxAge else {
+                return nil
+            }
+            return entry.map
+        }
+
+        func setLastGoodRexBlocks(_ map: [Int32: RexBlockEntry], now: TimeInterval) {
+            lock.lock()
+            defer { lock.unlock() }
+            lastGoodRexBlocks = (now, map)
+        }
+
+        func cachedRemoteGit(
+            for key: String,
+            now: TimeInterval,
+            ttl: TimeInterval = 12.0,
+            negativeTTL: TimeInterval = 15.0
+        ) -> (freshHit: Bool, staleMetadata: RemoteGitMetadata?) {
+            lock.lock()
+            defer { lock.unlock() }
+            if let entry = remoteGitCache[key] {
+                let effectiveTTL = entry.metadata.isValidResponse ? ttl : negativeTTL
+                let isFresh = (now - entry.timestamp) < effectiveTTL
+                return (isFresh, entry.metadata)
             }
             return (false, nil)
+        }
+
+        func setCachedRemoteGit(_ metadata: RemoteGitMetadata, for key: String, now: TimeInterval) {
+            lock.lock()
+            defer { lock.unlock() }
+            if remoteGitCache.count > 64 { remoteGitCache.removeAll(keepingCapacity: true) }
+            if !metadata.isValidResponse, let existing = remoteGitCache[key], existing.metadata.isValidResponse {
+                remoteGitCache[key] = (now, existing.metadata)
+                return
+            }
+            remoteGitCache[key] = (now, metadata)
+        }
+
+        func markRemoteGitInFlight(_ key: String) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if remoteGitInFlight.contains(key) {
+                return false
+            }
+            remoteGitInFlight.insert(key)
+            return true
+        }
+
+        func clearRemoteGitInFlight(_ key: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            remoteGitInFlight.remove(key)
+        }
+
+        func rememberRemoteCwd(_ cwd: String, forBlock blockID: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            if lastKnownRemoteCwdByBlock.count > 128 {
+                lastKnownRemoteCwdByBlock.removeAll(keepingCapacity: true)
+            }
+            lastKnownRemoteCwdByBlock[blockID] = cwd
+        }
+
+        func lastKnownRemoteCwd(forBlock blockID: String) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return lastKnownRemoteCwdByBlock[blockID]
+        }
+
+        func cachedGitDiff(for gitRoot: String, now: TimeInterval, ttl: TimeInterval = 3.5) -> (hit: Bool, summary: GitDiffSummary?, staleSummary: GitDiffSummary?) {
+            lock.lock()
+            defer { lock.unlock() }
+            if let entry = gitDiffCache[gitRoot] {
+                let isFresh = (now - entry.timestamp) < ttl
+                return (isFresh, entry.summary, entry.summary)
+            }
+            return (false, nil, nil)
         }
 
         func setCachedGitDiff(_ summary: GitDiffSummary?, for gitRoot: String, now: TimeInterval) {
@@ -850,6 +1093,22 @@ final class AgentActivityTracker {
             defer { lock.unlock() }
             if gitDiffCache.count > 64 { gitDiffCache.removeAll(keepingCapacity: true) }
             gitDiffCache[gitRoot] = (now, summary)
+        }
+
+        func cachedGitBranch(for gitRoot: String, now: TimeInterval, ttl: TimeInterval = 3.5) -> (hit: Bool, branch: String?, isWorktree: Bool) {
+            lock.lock()
+            defer { lock.unlock() }
+            if let entry = gitBranchCache[gitRoot], now - entry.timestamp < ttl {
+                return (true, entry.branch, entry.isWorktree)
+            }
+            return (false, nil, false)
+        }
+
+        func setCachedGitBranch(branch: String?, isWorktree: Bool, for gitRoot: String, now: TimeInterval) {
+            lock.lock()
+            defer { lock.unlock() }
+            if gitBranchCache.count > 64 { gitBranchCache.removeAll(keepingCapacity: true) }
+            gitBranchCache[gitRoot] = (now, branch, isWorktree)
         }
 
         func computeCPUPercent(pid: Int32, totalTimeNs: UInt64, now: TimeInterval) -> Double {
@@ -1044,7 +1303,18 @@ final class AgentActivityTracker {
             guard let family = rexEntry.detectedFamily else { continue }
             let en = AppLanguage.current == .english
             let status = rexEntry.inferredStatus
-            let effectiveCwd = rexEntry.isSSH ? (rexEntry.remoteCwdPath ?? "~") : rexEntry.cwdPath
+            let effectiveCwd: String = {
+                guard rexEntry.isSSH else { return rexEntry.cwdPath }
+                if let remoteCwd = rexEntry.remoteCwdPath, !remoteCwd.isEmpty, remoteCwd != "~" {
+                    DiscoveryCache.shared.rememberRemoteCwd(remoteCwd, forBlock: rexEntry.location.blockID)
+                    return remoteCwd
+                }
+                if let remembered = DiscoveryCache.shared.lastKnownRemoteCwd(forBlock: rexEntry.location.blockID),
+                   !remembered.isEmpty {
+                    return remembered
+                }
+                return rexEntry.remoteCwdPath ?? "~"
+            }()
             let wsName = URL(fileURLWithPath: effectiveCwd).lastPathComponent
             let baseTitle = rexEntry.cleanTitle ?? rexEntry.latestScreenPrompt ?? (en ? "\(family.shortName) Session" : "\(family.shortName) 会话")
             let displayTitle: String = {
@@ -1090,7 +1360,13 @@ final class AgentActivityTracker {
                 }
                 if rexEntry.isSSH {
                     results[idx].sshTarget = rexEntry.sshTarget.map { resolveSSHHostAlias($0, ipToAlias: sshConfig.ipToAlias) }
-                    if let remoteCwd = rexEntry.remoteCwdPath, !remoteCwd.isEmpty {
+                    if let remoteCwd = rexEntry.remoteCwdPath, !remoteCwd.isEmpty, remoteCwd != "~" {
+                        DiscoveryCache.shared.rememberRemoteCwd(remoteCwd, forBlock: rexEntry.location.blockID)
+                        results[idx].cwdPath = remoteCwd
+                    } else if let remembered = DiscoveryCache.shared.lastKnownRemoteCwd(forBlock: rexEntry.location.blockID),
+                              !remembered.isEmpty {
+                        results[idx].cwdPath = remembered
+                    } else if let remoteCwd = rexEntry.remoteCwdPath, !remoteCwd.isEmpty {
                         results[idx].cwdPath = remoteCwd
                     }
                     if !results[idx].title.uppercased().hasPrefix("SSH ") && !results[idx].title.uppercased().hasPrefix("[SSH]") {
@@ -1101,20 +1377,208 @@ final class AgentActivityTracker {
             if results[idx].terminalPreviewLines.isEmpty, let detail = results[idx].detail, !detail.isEmpty {
                 results[idx].terminalPreviewLines = [detail]
             }
-            if results[idx].gitDiff == nil {
-                if results[idx].sshTarget == nil, !results[idx].cwdPath.isEmpty {
-                    results[idx].gitDiff = inspectGitDiff(cwdPath: results[idx].cwdPath, homePath: home.path)
+            if let sshTarget = results[idx].sshTarget?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !sshTarget.isEmpty {
+                let remoteCwd = results[idx].cwdPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !remoteCwd.isEmpty, remoteCwd != "~", remoteCwd != "/",
+                   let remoteMeta = inspectRemoteSSHGitMetadata(sshTarget: sshTarget, remoteCwd: remoteCwd) {
+                    if let branch = remoteMeta.branch, !branch.isEmpty {
+                        results[idx].gitBranch = branch
+                    }
+                    results[idx].isGitWorktree = remoteMeta.isWorktree
+                    if results[idx].gitDiff == nil {
+                        results[idx].gitDiff = remoteMeta.diff
+                    }
+                }
+                if results[idx].gitBranch == nil {
+                    let rexEntry = results[idx].pid.flatMap { rexMap[$0] }
+                    results[idx].gitBranch = extractGitBranchFromTerminal(
+                        tail: rexEntry?.screenTail,
+                        title: rexEntry?.rawTitle ?? results[idx].title
+                    )
                 }
                 if results[idx].gitDiff == nil {
                     results[idx].gitDiff = extractDiffFromPreviewLines(results[idx].terminalPreviewLines)
                 }
+            } else {
+                if results[idx].gitDiff == nil {
+                    if !results[idx].cwdPath.isEmpty {
+                        results[idx].gitDiff = inspectGitDiff(cwdPath: results[idx].cwdPath, homePath: home.path)
+                    }
+                    if results[idx].gitDiff == nil {
+                        results[idx].gitDiff = extractDiffFromPreviewLines(results[idx].terminalPreviewLines)
+                    }
+                }
+                if !results[idx].cwdPath.isEmpty {
+                    let gitInfo = inspectGitBranchAndWorktree(cwdPath: results[idx].cwdPath, homePath: home.path)
+                    if let branch = gitInfo.branch, !branch.isEmpty {
+                        results[idx].gitBranch = branch
+                    }
+                    results[idx].isGitWorktree = gitInfo.isWorktree
+                }
+                if results[idx].gitBranch == nil {
+                    let rexEntry = results[idx].pid.flatMap { rexMap[$0] }
+                    results[idx].gitBranch = extractGitBranchFromTerminal(
+                        tail: rexEntry?.screenTail,
+                        title: rexEntry?.rawTitle ?? results[idx].title
+                    )
+                }
             }
         }
 
+        annotateWorkspaceCollisions(&results, homePath: home.path)
         return results
     }
 
-    // MARK: - Git Working Tree Diff Stat Inspection
+    // MARK: - Git Working Tree Diff, Branch, Worktree & Collision Inspection
+
+    private nonisolated static func inspectGitBranchAndWorktree(cwdPath: String, homePath: String) -> (branch: String?, isWorktree: Bool) {
+        guard let gitRoot = resolveGitRepositoryRoot(for: cwdPath, homePath: homePath) else {
+            return (nil, false)
+        }
+        let now = ProcessInfo.processInfo.systemUptime
+        let cached = DiscoveryCache.shared.cachedGitBranch(for: gitRoot, now: now)
+        if cached.hit {
+            return (cached.branch, cached.isWorktree)
+        }
+
+        let fm = FileManager.default
+        let dotGitPath = (gitRoot as NSString).appendingPathComponent(".git")
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: dotGitPath, isDirectory: &isDir) else {
+            DiscoveryCache.shared.setCachedGitBranch(branch: nil, isWorktree: false, for: gitRoot, now: now)
+            return (nil, false)
+        }
+
+        var isWorktree = false
+        var headPath: String? = nil
+
+        if isDir.boolValue {
+            isWorktree = false
+            headPath = (dotGitPath as NSString).appendingPathComponent("HEAD")
+        } else if let text = try? String(contentsOfFile: dotGitPath, encoding: .utf8) {
+            for line in text.split(separator: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.lowercased().hasPrefix("gitdir:") {
+                    let rawTarget = trimmed.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !rawTarget.isEmpty else { continue }
+                    let resolvedGitDir: String
+                    if rawTarget.hasPrefix("/") {
+                        resolvedGitDir = URL(fileURLWithPath: rawTarget).standardizedFileURL.path
+                    } else {
+                        resolvedGitDir = URL(
+                            fileURLWithPath: rawTarget,
+                            relativeTo: URL(fileURLWithPath: gitRoot, isDirectory: true)
+                        ).standardizedFileURL.path
+                    }
+                    if resolvedGitDir.contains("/worktrees/") || rawTarget.contains("/worktrees/") {
+                        isWorktree = true
+                    }
+                    let candidateHead = (resolvedGitDir as NSString).appendingPathComponent("HEAD")
+                    if fm.fileExists(atPath: candidateHead) {
+                        headPath = candidateHead
+                    } else {
+                        let commonDirFile = (resolvedGitDir as NSString).appendingPathComponent("commondir")
+                        if let rawCommon = try? String(contentsOfFile: commonDirFile, encoding: .utf8) {
+                            let trimmedCommon = rawCommon.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !trimmedCommon.isEmpty {
+                                let resolvedCommon = trimmedCommon.hasPrefix("/")
+                                    ? URL(fileURLWithPath: trimmedCommon).standardizedFileURL.path
+                                    : URL(
+                                        fileURLWithPath: trimmedCommon,
+                                        relativeTo: URL(fileURLWithPath: resolvedGitDir, isDirectory: true)
+                                    ).standardizedFileURL.path
+                                let commonHead = (resolvedCommon as NSString).appendingPathComponent("HEAD")
+                                if fm.fileExists(atPath: commonHead) {
+                                    headPath = commonHead
+                                }
+                            }
+                        }
+                    }
+                    break
+                }
+            }
+        }
+
+        var branch: String? = nil
+        if let headPath,
+           let rawHead = try? String(contentsOfFile: headPath, encoding: .utf8) {
+            let trimmedHead = rawHead.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedHead.hasPrefix("ref: refs/heads/") {
+                let name = String(trimmedHead.dropFirst("ref: refs/heads/".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty {
+                    branch = name
+                }
+            } else if trimmedHead.hasPrefix("ref: ") {
+                let refPath = String(trimmedHead.dropFirst("ref: ".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                let lastComp = (refPath as NSString).lastPathComponent
+                if !lastComp.isEmpty {
+                    branch = lastComp
+                }
+            } else if trimmedHead.count >= 7 && trimmedHead.allSatisfy({ $0.isHexDigit }) {
+                branch = String(trimmedHead.prefix(7))
+            }
+        }
+
+        DiscoveryCache.shared.setCachedGitBranch(branch: branch, isWorktree: isWorktree, for: gitRoot, now: now)
+        return (branch, isWorktree)
+    }
+
+    private nonisolated static func annotateWorkspaceCollisions(_ items: inout [AgentActivityItem], homePath: String) {
+        for idx in items.indices {
+            items[idx].hasWorkspaceCollision = false
+            items[idx].collisionPeerCount = 0
+        }
+
+        var groupsByCheckoutKey: [String: [Int]] = [:]
+        let standardizedHome = URL(fileURLWithPath: homePath).standardizedFileURL.path
+
+        for idx in items.indices {
+            let item = items[idx]
+            // Only consider online process sessions
+            guard item.pid != nil || item.rexPane != nil else { continue }
+
+            let checkoutKey: String? = {
+                if let sshTarget = item.sshTarget?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !sshTarget.isEmpty {
+                    let trimmedCwd = item.cwdPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmedCwd.isEmpty, trimmedCwd != "~", trimmedCwd != "/" else { return nil }
+                    let cacheKey = remoteGitCacheKey(sshTarget: sshTarget, remoteCwd: trimmedCwd)
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if let cachedRoot = DiscoveryCache.shared.cachedRemoteGit(for: cacheKey, now: now).staleMetadata?.gitRoot,
+                       !cachedRoot.isEmpty {
+                        return "ssh://\(sshTarget.lowercased()):\(cachedRoot)"
+                    }
+                    return "ssh://\(sshTarget.lowercased()):\(trimmedCwd)"
+                } else {
+                    let trimmedCwd = item.cwdPath.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmedCwd.isEmpty, trimmedCwd != "/", trimmedCwd != "~" else { return nil }
+                    if let gitRoot = resolveGitRepositoryRoot(for: trimmedCwd, homePath: standardizedHome) {
+                        return "local:\(gitRoot)"
+                    }
+                    let stdPath = URL(fileURLWithPath: trimmedCwd).standardizedFileURL.path
+                    guard !stdPath.isEmpty, stdPath != "/", stdPath != standardizedHome else { return nil }
+                    return "local:\(stdPath)"
+                }
+            }()
+
+            if let key = checkoutKey {
+                groupsByCheckoutKey[key, default: []].append(idx)
+            }
+        }
+
+        for (_, indices) in groupsByCheckoutKey where indices.count >= 2 {
+            let hasActiveWriter = indices.contains { i in
+                items[i].status == .working || items[i].status == .needsInput
+            }
+            guard hasActiveWriter else { continue }
+            let peerCount = indices.count - 1
+            for i in indices {
+                items[i].hasWorkspaceCollision = true
+                items[i].collisionPeerCount = peerCount
+            }
+        }
+    }
 
     private nonisolated static func resolveGitRepositoryRoot(for cwdPath: String, homePath: String) -> String? {
         let trimmed = cwdPath.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1145,40 +1609,220 @@ final class AgentActivityTracker {
             return cached.summary
         }
 
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        proc.arguments = ["--no-optional-locks", "-C", gitRoot, "diff", "HEAD", "--numstat"]
-        let outPipe = Pipe()
-        proc.standardOutput = outPipe
-        proc.standardError = FileHandle.nullDevice
+        let execResult = runProcessWithTimeout(
+            executableURL: URL(fileURLWithPath: "/usr/bin/git"),
+            arguments: ["--no-optional-locks", "-C", gitRoot, "diff", "HEAD", "--numstat"],
+            captureStdout: true,
+            timeoutSeconds: 2.0
+        )
+
+        guard execResult.succeeded, let text = String(data: execResult.outputData, encoding: .utf8) else {
+            let fallback = cached.staleSummary
+            DiscoveryCache.shared.setCachedGitDiff(fallback, for: gitRoot, now: now)
+            return fallback
+        }
 
         var summary: GitDiffSummary? = nil
-        do {
-            try proc.run()
-            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-            proc.waitUntilExit()
-            if proc.terminationStatus == 0, let text = String(data: data, encoding: .utf8) {
-                var files = 0
-                var ins = 0
-                var del = 0
-                for line in text.split(separator: "\n") {
-                    let parts = line.split(separator: "\t", maxSplits: 2)
-                    guard parts.count >= 3 else { continue }
-                    files += 1
-                    if let a = Int(parts[0]) { ins += a }
-                    if let d = Int(parts[1]) { del += d }
-                }
-                let candidate = GitDiffSummary(changedFiles: files, insertions: ins, deletions: del)
-                if !candidate.isEmpty {
-                    summary = candidate
-                }
-            }
-        } catch {
-            summary = nil
+        var files = 0
+        var ins = 0
+        var del = 0
+        for line in text.split(separator: "\n") {
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            guard parts.count >= 3 else { continue }
+            files += 1
+            if let a = Int(parts[0]) { ins += a }
+            if let d = Int(parts[1]) { del += d }
+        }
+        let candidate = GitDiffSummary(changedFiles: files, insertions: ins, deletions: del)
+        if !candidate.isEmpty {
+            summary = candidate
         }
 
         DiscoveryCache.shared.setCachedGitDiff(summary, for: gitRoot, now: now)
         return summary
+    }
+
+    private nonisolated static func remoteGitCacheKey(sshTarget: String, remoteCwd: String) -> String {
+        let host = sshTarget.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let path = remoteCwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "ssh://\(host):\(path)"
+    }
+
+    private nonisolated static func inspectRemoteSSHGitMetadata(sshTarget: String, remoteCwd: String) -> RemoteGitMetadata? {
+        let trimmedTarget = sshTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCwd = remoteCwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTarget.isEmpty, !trimmedCwd.isEmpty, trimmedCwd != "~", trimmedCwd != "/" else {
+            return nil
+        }
+
+        let cacheKey = remoteGitCacheKey(sshTarget: trimmedTarget, remoteCwd: trimmedCwd)
+        let now = ProcessInfo.processInfo.systemUptime
+        let cached = DiscoveryCache.shared.cachedRemoteGit(for: cacheKey, now: now, ttl: 12.0, negativeTTL: 15.0)
+
+        if cached.freshHit {
+            guard let meta = cached.staleMetadata, meta.isValidResponse else { return nil }
+            return meta
+        }
+
+        if let stale = cached.staleMetadata {
+            if DiscoveryCache.shared.markRemoteGitInFlight(cacheKey) {
+                Task.detached(priority: .utility) {
+                    defer { DiscoveryCache.shared.clearRemoteGitInFlight(cacheKey) }
+                    let refreshed = Self.fetchRemoteSSHGitMetadata(sshTarget: trimmedTarget, remoteCwd: trimmedCwd)
+                    let updatedNow = ProcessInfo.processInfo.systemUptime
+                    DiscoveryCache.shared.setCachedRemoteGit(refreshed, for: cacheKey, now: updatedNow)
+                }
+            }
+            return stale.isValidResponse ? stale : nil
+        }
+
+        guard DiscoveryCache.shared.markRemoteGitInFlight(cacheKey) else {
+            return nil
+        }
+        defer { DiscoveryCache.shared.clearRemoteGitInFlight(cacheKey) }
+        let fetched = fetchRemoteSSHGitMetadata(sshTarget: trimmedTarget, remoteCwd: trimmedCwd)
+        let finishedNow = ProcessInfo.processInfo.systemUptime
+        DiscoveryCache.shared.setCachedRemoteGit(fetched, for: cacheKey, now: finishedNow)
+        return fetched.isValidResponse ? fetched : nil
+    }
+
+    private nonisolated static func fetchRemoteSSHGitMetadata(sshTarget: String, remoteCwd: String) -> RemoteGitMetadata {
+        let cdExpr: String = {
+            if remoteCwd.hasPrefix("~/") {
+                let rel = String(remoteCwd.dropFirst(2))
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                return "cd \"$HOME/\(rel)\""
+            } else {
+                let escaped = remoteCwd
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                return "cd \"\(escaped)\""
+            }
+        }()
+
+        let remoteScript = "\(cdExpr) 2>/dev/null || exit 0; git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0; echo \"AM_ROOT:$(git rev-parse --show-toplevel 2>/dev/null)\"; echo \"AM_GITDIR:$(git rev-parse --git-dir 2>/dev/null)\"; br=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || git rev-parse --short=7 HEAD 2>/dev/null); echo \"AM_BRANCH:$br\"; git --no-optional-locks diff HEAD --numstat 2>/dev/null"
+
+        let sshURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        let controlPathOpt = "ControlPath=/tmp/agentmeter-ssh-%C"
+        var execResult = runProcessWithTimeout(
+            executableURL: sshURL,
+            arguments: [
+                "-o", "BatchMode=yes",
+                "-o", "ConnectTimeout=3",
+                "-o", "ControlMaster=auto",
+                "-o", controlPathOpt,
+                "-o", "ControlPersist=300s",
+                sshTarget,
+                remoteScript,
+            ],
+            captureStdout: true,
+            timeoutSeconds: 4.5
+        )
+
+        if !execResult.succeeded && !execResult.timedOut {
+            _ = runProcessWithTimeout(
+                executableURL: sshURL,
+                arguments: ["-O", "exit", "-o", controlPathOpt, sshTarget],
+                captureStdout: false,
+                timeoutSeconds: 1.0
+            )
+            execResult = runProcessWithTimeout(
+                executableURL: sshURL,
+                arguments: [
+                    "-o", "BatchMode=yes",
+                    "-o", "ConnectTimeout=2",
+                    sshTarget,
+                    remoteScript,
+                ],
+                captureStdout: true,
+                timeoutSeconds: 2.5
+            )
+        }
+
+        guard execResult.succeeded,
+              let text = String(data: execResult.outputData, encoding: .utf8) else {
+            return RemoteGitMetadata(branch: nil, isWorktree: false, diff: nil, gitRoot: nil, isValidResponse: false)
+        }
+
+        guard !text.isEmpty else {
+            return RemoteGitMetadata(branch: nil, isWorktree: false, diff: nil, gitRoot: nil, isValidResponse: true)
+        }
+
+        var gitRoot: String? = nil
+        var isWorktree = false
+        var branch: String? = nil
+        var files = 0
+        var ins = 0
+        var del = 0
+
+        for rawLine in text.split(separator: "\n") {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { continue }
+            if line.hasPrefix("AM_ROOT:") {
+                let val = String(line.dropFirst("AM_ROOT:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !val.isEmpty {
+                    gitRoot = val
+                }
+            } else if line.hasPrefix("AM_GITDIR:") {
+                let val = String(line.dropFirst("AM_GITDIR:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if val.contains("/worktrees/") {
+                    isWorktree = true
+                }
+            } else if line.hasPrefix("AM_BRANCH:") {
+                let val = String(line.dropFirst("AM_BRANCH:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !val.isEmpty, val != "HEAD" {
+                    branch = val
+                }
+            } else if rawLine.contains("\t") {
+                let parts = rawLine.split(separator: "\t", maxSplits: 2)
+                if parts.count >= 3 {
+                    files += 1
+                    if let a = Int(parts[0].trimmingCharacters(in: .whitespaces)) { ins += a }
+                    if let d = Int(parts[1].trimmingCharacters(in: .whitespaces)) { del += d }
+                }
+            }
+        }
+
+        let candidateDiff = GitDiffSummary(changedFiles: files, insertions: ins, deletions: del)
+        let diff: GitDiffSummary? = candidateDiff.isEmpty ? nil : candidateDiff
+        return RemoteGitMetadata(branch: branch, isWorktree: isWorktree, diff: diff, gitRoot: gitRoot)
+    }
+
+    private nonisolated static func extractGitBranchFromTerminal(tail: String?, title: String?) -> String? {
+        var candidates: [String] = []
+        if let tail {
+            let lines = tail.split(separator: "\n").suffix(15).reversed()
+            candidates.append(contentsOf: lines.map(String.init))
+        }
+        if let title, !title.isEmpty {
+            candidates.append(title)
+        }
+
+        let patterns = [
+            "git:\\(([A-Za-z0-9._/-]+)\\)",
+            "on\\s+⎇\\s*([A-Za-z0-9._/-]+)",
+            "⎇\\s+([A-Za-z0-9._/-]+)",
+            "\u{E0A0}\\s*([A-Za-z0-9._/-]+)",
+        ]
+
+        for line in candidates {
+            let nsLine = line as NSString
+            let fullRange = NSRange(location: 0, length: nsLine.length)
+            for pattern in patterns {
+                guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+                if let match = regex.firstMatch(in: line, range: fullRange), match.numberOfRanges >= 2 {
+                    let branchRange = match.range(at: 1)
+                    if branchRange.location != NSNotFound {
+                        let extracted = nsLine.substring(with: branchRange).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !extracted.isEmpty, extracted != "HEAD" {
+                            return extracted
+                        }
+                    }
+                }
+            }
+        }
+        return nil
     }
 
     private nonisolated static func extractDiffFromPreviewLines(_ lines: [String]) -> GitDiffSummary? {
@@ -1491,6 +2135,7 @@ final class AgentActivityTracker {
             return result
         }
         defer { sqlite3_close(db) }
+        sqlite3_busy_timeout(db, 400)
 
         let sessionSQL = """
         SELECT ts, ts_nanos FROM logs
@@ -1604,6 +2249,7 @@ final class AgentActivityTracker {
         var db: OpaquePointer?
         if sqlite3_open_v2(dbURL.path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
             defer { sqlite3_close(db) }
+            sqlite3_busy_timeout(db, 400)
             let sql = "SELECT id, COALESCE(NULLIF(name, ''), NULLIF(title, ''), first_user_message), cwd FROM threads ORDER BY updated_at DESC LIMIT 80;"
             var stmt: OpaquePointer?
             if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -2491,6 +3137,17 @@ final class AgentActivityTracker {
                     return pathPart
                 }
             }
+            if let tail = screenTail {
+                for line in tail.split(separator: "\n") {
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if (trimmed.hasPrefix("/") || trimmed.hasPrefix("~/")),
+                       !trimmed.contains(" "),
+                       !trimmed.contains("//"),
+                       (2...140).contains(trimmed.count) {
+                        return trimmed
+                    }
+                }
+            }
             return nil
         }
 
@@ -2592,121 +3249,123 @@ final class AgentActivityTracker {
     }
 
     private nonisolated static func queryRexBlocks(home: URL) -> [Int32: RexBlockEntry] {
-        guard let rexBin = resolveRexBinary(home: home) else { return [:] }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let rexBin = resolveRexBinary(home: home) else {
+            return DiscoveryCache.shared.cachedRexBlocksFallback(now: now, maxAge: 6.0) ?? [:]
+        }
         let luaScript = """
-        local sessions = rex.call("session.list").sessions or {}
+        local ok_s, s_res = pcall(rex.call, "session.list")
+        local sessions = (ok_s and s_res and s_res.sessions) or {}
         local out = {}
         for _, s in ipairs(sessions) do
           local sid = s.session_id
-          rex.call("session.attach", {session_id = sid})
-          local view = rex.call("session.view", {session_id = sid})
-          local active_wid = view and view.active_window_id
-          local focused_bid = nil
-          if active_wid and view and view.windows then
-            for _, w in ipairs(view.windows) do
-              if w.window_id == active_wid then
-                focused_bid = w.focused_block_id
-                break
-              end
-            end
-          end
-          local blocks = rex.call("session.list_blocks", {session_id = sid}).blocks or {}
-          for _, b in ipairs(blocks) do
-            if b.creator_name == "com.superlogical.terminal" then
-              local p = rex.call("block.method", {session_id = sid, block_id = b.block_id, method = "process"})
-              local t = rex.call("block.method", {session_id = sid, block_id = b.block_id, method = "title"})
-              local st = rex.call("block.method", {session_id = sid, block_id = b.block_id, method = "program_status"})
-              local m = rex.call("block.method", {session_id = sid, block_id = b.block_id, method = "modes"})
-              local state = nil
-              local app = nil
-              if st and st.records and st.records[1] then
-                state = st.records[1].state
-                app = st.records[1].effective_app or st.records[1].app
-              end
-              local screen = m and m.screen
-              local fg_name = string.lower((p and p.foreground and p.foreground.name) or "")
-              local fg_path = string.lower((p and p.foreground and p.foreground.path) or "")
-              local is_ssh = (fg_name == "ssh" or string.sub(fg_path, -4) == "/ssh")
-              if not is_ssh and p and p.ancestors then
-                for _, anc in ipairs(p.ancestors) do
-                  local aname = string.lower(anc.name or "")
-                  local apath = string.lower(anc.path or "")
-                  if aname == "ssh" or string.sub(apath, -4) == "/ssh" then
-                    is_ssh = true
+          if sid then
+            local ok_att = pcall(rex.call, "session.attach", {session_id = sid})
+            if ok_att then
+              local ok_v, view = pcall(rex.call, "session.view", {session_id = sid})
+              if not ok_v then view = nil end
+              local active_wid = view and view.active_window_id
+              local focused_bid = nil
+              if active_wid and view and view.windows then
+                for _, w in ipairs(view.windows) do
+                  if w.window_id == active_wid then
+                    focused_bid = w.focused_block_id
                     break
                   end
                 end
               end
-              local app_lower = string.lower(app or "")
-              local raw_title = (t and t.title) or ""
-              local title_lower = string.lower(raw_title)
-              local is_candidate = (app_lower ~= "")
-                or (fg_name == "codex" or fg_name == "claude" or fg_name == "copilot" or fg_name == "agy" or fg_name == "antigravity" or fg_name == "ssh" or fg_name == "node")
-                or (screen == "alternate")
-                or (string.find(title_lower, "claude", 1, true) ~= nil)
-                or (string.find(title_lower, "copilot", 1, true) ~= nil)
-                or (string.find(title_lower, "codex", 1, true) ~= nil)
-                or (string.find(title_lower, "antigravity", 1, true) ~= nil)
-              local tail = nil
-              local prompts = {}
-              if is_candidate then
-                local fmt = rex.call("block.method", {session_id = sid, block_id = b.block_id, method = "format", args = {format = "text", trim = true}})
-                if fmt and fmt.content then
-                  tail = string.sub(fmt.content, -1600)
-                  for line in string.gmatch(fmt.content, "[^\\r\\n]+") do
-                    local p1 = string.match(line, "^%s*›%s+(.+)$")
-                    local p2 = string.match(line, "^%s*❯%s+(.+)$")
-                    local p = p1 or p2
-                    if p and not string.find(p, "Ask Codex to do anything") and not string.find(p, "^%d+%.%s") and not string.find(p, "^Thought for ") then
-                      table.insert(prompts, p)
+              local ok_b, b_res = pcall(rex.call, "session.list_blocks", {session_id = sid})
+              local blocks = (ok_b and b_res and b_res.blocks) or {}
+              for _, b in ipairs(blocks) do
+                if b.creator_name == "com.superlogical.terminal" and b.block_id then
+                  local ok_p, p = pcall(rex.call, "block.method", {session_id = sid, block_id = b.block_id, method = "process"})
+                  if not ok_p then p = nil end
+                  local ok_t, t = pcall(rex.call, "block.method", {session_id = sid, block_id = b.block_id, method = "title"})
+                  if not ok_t then t = nil end
+                  local ok_st, st = pcall(rex.call, "block.method", {session_id = sid, block_id = b.block_id, method = "program_status"})
+                  if not ok_st then st = nil end
+                  local ok_m, m = pcall(rex.call, "block.method", {session_id = sid, block_id = b.block_id, method = "modes"})
+                  if not ok_m then m = nil end
+                  local state = nil
+                  local app = nil
+                  if st and st.records and st.records[1] then
+                    state = st.records[1].state
+                    app = st.records[1].effective_app or st.records[1].app
+                  end
+                  local screen = m and m.screen
+                  local fg_name = string.lower((p and p.foreground and p.foreground.name) or "")
+                  local fg_path = string.lower((p and p.foreground and p.foreground.path) or "")
+                  local is_ssh = (fg_name == "ssh" or string.sub(fg_path, -4) == "/ssh")
+                  if not is_ssh and p and p.ancestors then
+                    for _, anc in ipairs(p.ancestors) do
+                      local aname = string.lower(anc.name or "")
+                      local apath = string.lower(anc.path or "")
+                      if aname == "ssh" or string.sub(apath, -4) == "/ssh" then
+                        is_ssh = true
+                        break
+                      end
                     end
                   end
+                  local app_lower = string.lower(app or "")
+                  local raw_title = (t and t.title) or ""
+                  local title_lower = string.lower(raw_title)
+                  local is_candidate = (app_lower ~= "")
+                    or (fg_name == "codex" or fg_name == "claude" or fg_name == "copilot" or fg_name == "agy" or fg_name == "antigravity" or fg_name == "ssh" or fg_name == "node")
+                    or (screen == "alternate")
+                    or (string.find(title_lower, "claude", 1, true) ~= nil)
+                    or (string.find(title_lower, "copilot", 1, true) ~= nil)
+                    or (string.find(title_lower, "codex", 1, true) ~= nil)
+                    or (string.find(title_lower, "antigravity", 1, true) ~= nil)
+                  local tail = nil
+                  local prompts = {}
+                  if is_candidate then
+                    local ok_f, fmt = pcall(rex.call, "block.method", {session_id = sid, block_id = b.block_id, method = "format", args = {format = "text", trim = true}})
+                    if ok_f and fmt and fmt.content then
+                      tail = string.sub(fmt.content, -1600)
+                      for line in string.gmatch(fmt.content, "[^\\r\\n]+") do
+                        local p1 = string.match(line, "^%s*›%s+(.+)$")
+                        local p2 = string.match(line, "^%s*❯%s+(.+)$")
+                        local p = p1 or p2
+                        if p and not string.find(p, "Ask Codex to do anything") and not string.find(p, "^%d+%.%s") and not string.find(p, "^Thought for ") then
+                          table.insert(prompts, p)
+                        end
+                      end
+                    end
+                  end
+                  table.insert(out, {
+                    session_id = sid,
+                    window_id = b.window_id,
+                    block_id = b.block_id,
+                    is_focused = (b.window_id == active_wid and b.block_id == focused_bid),
+                    pid = p and p.foreground and p.foreground.pid,
+                    name = p and p.foreground and p.foreground.name,
+                    cwd = p and p.foreground and p.foreground.cwd,
+                    title = t and t.title,
+                    state = state,
+                    app = app,
+                    screen = screen,
+                    tail = tail,
+                    prompts = prompts,
+                    is_ssh = is_ssh,
+                  })
                 end
               end
-              table.insert(out, {
-                session_id = sid,
-                window_id = b.window_id,
-                block_id = b.block_id,
-                is_focused = (b.window_id == active_wid and b.block_id == focused_bid),
-                pid = p and p.foreground and p.foreground.pid,
-                name = p and p.foreground and p.foreground.name,
-                cwd = p and p.foreground and p.foreground.cwd,
-                title = t and t.title,
-                state = state,
-                app = app,
-                screen = screen,
-                tail = tail,
-                prompts = prompts,
-                is_ssh = is_ssh,
-              })
             end
           end
         end
         return out
         """
 
-        let pipe = Pipe()
-        let proc = Process()
-        proc.executableURL = rexBin
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "REX_SESSION")
-        env.removeValue(forKey: "REX_BLOCK")
-        env.removeValue(forKey: "REX_SERVER")
-        proc.environment = env
-        proc.arguments = ["--autostart=false", "--timeout", "1s", "do", "-e", luaScript, "--json"]
-        proc.standardOutput = pipe
-        proc.standardError = FileHandle.nullDevice
-
-        do {
-            try proc.run()
-        } catch {
-            return [:]
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        proc.waitUntilExit()
-        guard proc.terminationStatus == 0,
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return [:]
+        let execResult = runProcessWithTimeout(
+            executableURL: rexBin,
+            arguments: ["--autostart=false", "--timeout", "1s", "do", "-e", luaScript, "--json"],
+            environment: rexCleanEnvironment(),
+            captureStdout: true,
+            timeoutSeconds: 1.8
+        )
+        guard execResult.succeeded,
+              let rows = try? JSONSerialization.jsonObject(with: execResult.outputData) as? [[String: Any]] else {
+            return DiscoveryCache.shared.cachedRexBlocksFallback(now: now, maxAge: 6.0) ?? [:]
         }
 
         var map: [Int32: RexBlockEntry] = [:]
@@ -2753,6 +3412,7 @@ final class AgentActivityTracker {
                 sshTarget: sshTarget
             )
         }
+        DiscoveryCache.shared.setLastGoodRexBlocks(map, now: ProcessInfo.processInfo.systemUptime)
         return map
     }
 
@@ -2810,7 +3470,10 @@ final class AgentActivityTracker {
 
     private nonisolated static func performRexJump(for item: AgentActivityItem) -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        guard let rexBin = resolveRexBinary(home: home) else { return false }
+        dismissMenuBarPanelWindows()
+        guard let rexBin = resolveRexBinary(home: home) else {
+            return activateRexApp()
+        }
         ensureRexRemoteControlEnabled()
 
         var targetPane = item.rexPane
@@ -2821,8 +3484,6 @@ final class AgentActivityTracker {
             }
         }
 
-        dismissMenuBarPanelWindows()
-
         let script: String
         if let rexPane = targetPane {
             let widExpr = rexPane.windowID.map(luaQuote) ?? "nil"
@@ -2830,8 +3491,9 @@ final class AgentActivityTracker {
             local sid = \(luaQuote(rexPane.sessionID))
             local wid = \(widExpr)
             local bid = \(luaQuote(rexPane.blockID))
-            rex.call("session.attach", {session_id = sid})
-            local view = rex.call("session.view", {session_id = sid})
+            pcall(rex.call, "session.attach", {session_id = sid})
+            local ok_v, view = pcall(rex.call, "session.view", {session_id = sid})
+            if not ok_v then view = nil end
             local win_idx = nil
             if wid and view and view.windows then
               for idx, w in ipairs(view.windows) do
@@ -2839,10 +3501,11 @@ final class AgentActivityTracker {
               end
             end
             if wid then
-              rex.call("session.focus_window", {session_id = sid, window_id = wid})
+              pcall(rex.call, "session.focus_window", {session_id = sid, window_id = wid})
             end
-            rex.call("session.focus_block", {session_id = sid, block_id = bid})
-            local clients = rex.call("client.list").clients or {}
+            pcall(rex.call, "session.focus_block", {session_id = sid, block_id = bid})
+            local ok_c, c_res = pcall(rex.call, "client.list")
+            local clients = (ok_c and c_res and c_res.clients) or {}
             for _, c in ipairs(clients) do
               if c.info and c.info.kind == "app" and c.connection_state == "connected" then
                 pcall(rex.call, "client.perform", {
@@ -2866,31 +3529,36 @@ final class AgentActivityTracker {
             let targetPID = item.pid ?? -1
             let targetCwd = luaQuote(item.cwdPath)
             script = """
-            local sessions = rex.call("session.list").sessions or {}
+            local ok_s, s_res = pcall(rex.call, "session.list")
+            local sessions = (ok_s and s_res and s_res.sessions) or {}
             local target_pid = \(targetPID)
             local target_cwd = \(targetCwd)
             local matched_sid, matched_wid, matched_bid = nil, nil, nil
             for _, s in ipairs(sessions) do
               local sid = s.session_id
-              rex.call("session.attach", {session_id = sid})
-              local blocks = rex.call("session.list_blocks", {session_id = sid}).blocks or {}
-              for _, b in ipairs(blocks) do
-                if b.creator_name == "com.superlogical.terminal" then
-                  local p = rex.call("block.method", {session_id = sid, block_id = b.block_id, method = "process"})
-                  local fg = p and p.foreground
-                  if fg then
-                    if (target_pid > 0 and fg.pid == target_pid) or (target_cwd ~= "" and fg.cwd == target_cwd) then
-                      matched_sid = sid
-                      matched_wid = b.window_id
-                      matched_bid = b.block_id
-                      if target_pid > 0 and fg.pid == target_pid then break end
+              if sid then
+                pcall(rex.call, "session.attach", {session_id = sid})
+                local ok_b, b_res = pcall(rex.call, "session.list_blocks", {session_id = sid})
+                local blocks = (ok_b and b_res and b_res.blocks) or {}
+                for _, b in ipairs(blocks) do
+                  if b.creator_name == "com.superlogical.terminal" and b.block_id then
+                    local ok_p, p = pcall(rex.call, "block.method", {session_id = sid, block_id = b.block_id, method = "process"})
+                    local fg = ok_p and p and p.foreground
+                    if fg then
+                      if (target_pid > 0 and fg.pid == target_pid) or (target_cwd ~= "" and fg.cwd == target_cwd) then
+                        matched_sid = sid
+                        matched_wid = b.window_id
+                        matched_bid = b.block_id
+                        if target_pid > 0 and fg.pid == target_pid then break end
+                      end
                     end
                   end
                 end
               end
             end
             if matched_sid and matched_bid then
-              local view = rex.call("session.view", {session_id = matched_sid})
+              local ok_v, view = pcall(rex.call, "session.view", {session_id = matched_sid})
+              if not ok_v then view = nil end
               local win_idx = nil
               if matched_wid and view and view.windows then
                 for idx, w in ipairs(view.windows) do
@@ -2898,10 +3566,11 @@ final class AgentActivityTracker {
                 end
               end
               if matched_wid then
-                rex.call("session.focus_window", {session_id = matched_sid, window_id = matched_wid})
+                pcall(rex.call, "session.focus_window", {session_id = matched_sid, window_id = matched_wid})
               end
-              rex.call("session.focus_block", {session_id = matched_sid, block_id = matched_bid})
-              local clients = rex.call("client.list").clients or {}
+              pcall(rex.call, "session.focus_block", {session_id = matched_sid, block_id = matched_bid})
+              local ok_c, c_res = pcall(rex.call, "client.list")
+              local clients = (ok_c and c_res and c_res.clients) or {}
               for _, c in ipairs(clients) do
                 if c.info and c.info.kind == "app" and c.connection_state == "connected" then
                   pcall(rex.call, "client.perform", {
@@ -2924,18 +3593,13 @@ final class AgentActivityTracker {
             """
         }
 
-        let proc = Process()
-        proc.executableURL = rexBin
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "REX_SESSION")
-        env.removeValue(forKey: "REX_BLOCK")
-        env.removeValue(forKey: "REX_SERVER")
-        proc.environment = env
-        proc.arguments = ["--autostart=false", "--timeout", "2s", "do", "-e", script]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
-        try? proc.run()
-        proc.waitUntilExit()
+        _ = runProcessWithTimeout(
+            executableURL: rexBin,
+            arguments: ["--autostart=false", "--timeout", "2s", "do", "-e", script],
+            environment: rexCleanEnvironment(),
+            captureStdout: false,
+            timeoutSeconds: 2.8
+        )
 
         return activateRexApp()
     }
@@ -2945,61 +3609,45 @@ final class AgentActivityTracker {
         var closedInRex = false
 
         if let rexBin = resolveRexBinary(home: home) {
-            var targetPane = item.rexPane
-            if targetPane == nil, let pid = item.pid {
-                let liveRexMap = queryRexBlocks(home: home)
-                if let found = liveRexMap[pid] {
-                    targetPane = found.location
-                }
-            }
-
-            if let rexPane = targetPane {
+            func tryClosePane(_ rexPane: RexPaneLocation) -> Bool {
                 let script = """
                 local sid = \(luaQuote(rexPane.sessionID))
                 local bid = \(luaQuote(rexPane.blockID))
-                pcall(rex.call, "session.attach", {session_id = sid})
-                pcall(rex.call, "block.close", {session_id = sid, block_id = bid})
+                local ok_att = pcall(rex.call, "session.attach", {session_id = sid})
+                if not ok_att then os.exit(1) end
+                local ok_cl = pcall(rex.call, "block.close", {session_id = sid, block_id = bid})
+                if not ok_cl then os.exit(1) end
                 """
-                let proc = Process()
-                proc.executableURL = rexBin
-                var env = ProcessInfo.processInfo.environment
-                env.removeValue(forKey: "REX_SESSION")
-                env.removeValue(forKey: "REX_BLOCK")
-                env.removeValue(forKey: "REX_SERVER")
-                proc.environment = env
-                proc.arguments = ["--autostart=false", "--timeout", "2s", "do", "-e", script]
-                proc.standardOutput = FileHandle.nullDevice
-                proc.standardError = FileHandle.nullDevice
-                do {
-                    try proc.run()
-                    proc.waitUntilExit()
-                    closedInRex = (proc.terminationStatus == 0)
-                } catch {
-                    closedInRex = false
+                let execResult = runProcessWithTimeout(
+                    executableURL: rexBin,
+                    arguments: ["--autostart=false", "--timeout", "2s", "do", "-e", script],
+                    environment: rexCleanEnvironment(),
+                    captureStdout: false,
+                    timeoutSeconds: 2.8
+                )
+                return execResult.succeeded
+            }
+
+            if let initialPane = item.rexPane {
+                closedInRex = tryClosePane(initialPane)
+            }
+            if !closedInRex, let pid = item.pid {
+                let liveRexMap = queryRexBlocks(home: home)
+                if let found = liveRexMap[pid], found.location != item.rexPane {
+                    closedInRex = tryClosePane(found.location)
                 }
             }
         }
 
+        var killedProcess = false
         if let pid = item.pid, pid > 1 {
-            _ = Darwin.kill(pid, SIGTERM)
+            killedProcess = (Darwin.kill(pid, SIGTERM) == 0)
         }
 
-        return closedInRex || (item.pid != nil)
+        return closedInRex || killedProcess
     }
 
     private nonisolated static func performRexApprovalWrite(for item: AgentActivityItem, choice: AgentApprovalChoice) -> Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        guard let rexBin = resolveRexBinary(home: home) else { return false }
-
-        var targetPane = item.rexPane
-        if targetPane == nil, let pid = item.pid {
-            let liveRexMap = queryRexBlocks(home: home)
-            if let found = liveRexMap[pid] {
-                targetPane = found.location
-            }
-        }
-        guard let rexPane = targetPane else { return false }
-
         let combinedPreview = item.terminalPreviewLines.joined(separator: "\n").lowercased()
         let isPlainYN = combinedPreview.contains("[y/n]") || combinedPreview.contains("(y/n)")
         let hasNumberedDenyOption3 = combinedPreview.contains("3. no") || combinedPreview.contains("3. cancel") || combinedPreview.contains("3. reject")
@@ -3024,89 +3672,158 @@ final class AgentActivityTracker {
             }
         }()
 
-        let script = """
-        local sid = \(luaQuote(rexPane.sessionID))
-        local bid = \(luaQuote(rexPane.blockID))
-        pcall(rex.call, "session.attach", {session_id = sid})
-        rex.call("block.method", {
-          session_id = sid,
-          block_id = bid,
-          method = "write",
-          args = { data = \(luaQuote(payload)) }
-        })
-        """
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        if let rexBin = resolveRexBinary(home: home) {
+            func tryWriteToPane(_ rexPane: RexPaneLocation) -> Bool {
+                let script = """
+                local sid = \(luaQuote(rexPane.sessionID))
+                local bid = \(luaQuote(rexPane.blockID))
+                local ok_att = pcall(rex.call, "session.attach", {session_id = sid})
+                if not ok_att then os.exit(1) end
+                local ok_w = pcall(rex.call, "block.method", {
+                  session_id = sid,
+                  block_id = bid,
+                  method = "write",
+                  args = { data = \(luaQuote(payload)) }
+                })
+                if not ok_w then os.exit(1) end
+                """
+                let execResult = runProcessWithTimeout(
+                    executableURL: rexBin,
+                    arguments: ["--autostart=false", "--timeout", "2s", "do", "-e", script],
+                    environment: rexCleanEnvironment(),
+                    captureStdout: false,
+                    timeoutSeconds: 2.8
+                )
+                return execResult.succeeded
+            }
 
-        let proc = Process()
-        proc.executableURL = rexBin
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "REX_SESSION")
-        env.removeValue(forKey: "REX_BLOCK")
-        env.removeValue(forKey: "REX_SERVER")
-        proc.environment = env
-        proc.arguments = ["--autostart=false", "--timeout", "2s", "do", "-e", script]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            return proc.terminationStatus == 0
-        } catch {
-            return false
+            if let initialPane = item.rexPane, tryWriteToPane(initialPane) {
+                return true
+            }
+            if let pid = item.pid {
+                let liveRexMap = queryRexBlocks(home: home)
+                if let found = liveRexMap[pid], found.location != item.rexPane, tryWriteToPane(found.location) {
+                    return true
+                }
+            }
         }
+
+        if item.sshTarget == nil, let tty = item.tty, !tty.isEmpty {
+            return writeToLocalTTY(ttyName: tty, data: Data(payload.utf8))
+        }
+        return false
     }
 
     private nonisolated static func performRexPromptWrite(for item: AgentActivityItem, text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         let home = FileManager.default.homeDirectoryForCurrentUser
-        guard let rexBin = resolveRexBinary(home: home) else { return false }
 
-        var targetPane = item.rexPane
-        if targetPane == nil, let pid = item.pid {
-            let liveRexMap = queryRexBlocks(home: home)
-            if let found = liveRexMap[pid] {
-                targetPane = found.location
+        if let rexBin = resolveRexBinary(home: home) {
+            func tryWritePromptToPane(_ rexPane: RexPaneLocation) -> Bool {
+                // Send text first, then carriage return \r after a brief yield so TUI agents (Claude Code / Codex) submit cleanly
+                let script = """
+                local sid = \(luaQuote(rexPane.sessionID))
+                local bid = \(luaQuote(rexPane.blockID))
+                local ok_att = pcall(rex.call, "session.attach", {session_id = sid})
+                if not ok_att then os.exit(1) end
+                local ok_w1 = pcall(rex.call, "block.method", {
+                  session_id = sid,
+                  block_id = bid,
+                  method = "write",
+                  args = { data = \(luaQuote(trimmed)) }
+                })
+                if not ok_w1 then os.exit(1) end
+                pcall(rex.sleep, 0.06)
+                local ok_w2 = pcall(rex.call, "block.method", {
+                  session_id = sid,
+                  block_id = bid,
+                  method = "write",
+                  args = { data = "\\r" }
+                })
+                if not ok_w2 then os.exit(1) end
+                """
+                let execResult = runProcessWithTimeout(
+                    executableURL: rexBin,
+                    arguments: ["--autostart=false", "--timeout", "2s", "do", "-e", script],
+                    environment: rexCleanEnvironment(),
+                    captureStdout: false,
+                    timeoutSeconds: 2.8
+                )
+                return execResult.succeeded
+            }
+
+            if let initialPane = item.rexPane, tryWritePromptToPane(initialPane) {
+                return true
+            }
+            if let pid = item.pid {
+                let liveRexMap = queryRexBlocks(home: home)
+                if let found = liveRexMap[pid], found.location != item.rexPane, tryWritePromptToPane(found.location) {
+                    return true
+                }
             }
         }
-        guard let rexPane = targetPane else { return false }
 
-        // Send text first, then carriage return \r after a brief yield so TUI agents (Claude Code / Codex) submit cleanly
-        let script = """
-        local sid = \(luaQuote(rexPane.sessionID))
-        local bid = \(luaQuote(rexPane.blockID))
-        pcall(rex.call, "session.attach", {session_id = sid})
-        rex.call("block.method", {
-          session_id = sid,
-          block_id = bid,
-          method = "write",
-          args = { data = \(luaQuote(trimmed)) }
-        })
-        rex.sleep(0.06)
-        rex.call("block.method", {
-          session_id = sid,
-          block_id = bid,
-          method = "write",
-          args = { data = "\\r" }
-        })
-        """
-
-        let proc = Process()
-        proc.executableURL = rexBin
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "REX_SESSION")
-        env.removeValue(forKey: "REX_BLOCK")
-        env.removeValue(forKey: "REX_SERVER")
-        proc.environment = env
-        proc.arguments = ["--autostart=false", "--timeout", "2s", "do", "-e", script]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            return proc.terminationStatus == 0
-        } catch {
-            return false
+        if item.sshTarget == nil, let tty = item.tty, !tty.isEmpty {
+            return writeToLocalTTY(ttyName: tty, data: Data((trimmed + "\r").utf8))
         }
+        return false
+    }
+
+    private nonisolated static func performRexInterrupt(for item: AgentActivityItem) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+
+        if let rexBin = resolveRexBinary(home: home) {
+            func tryInterruptPane(_ rexPane: RexPaneLocation) -> Bool {
+                let script = """
+                local sid = \(luaQuote(rexPane.sessionID))
+                local bid = \(luaQuote(rexPane.blockID))
+                local ok_att = pcall(rex.call, "session.attach", {session_id = sid})
+                if not ok_att then os.exit(1) end
+                local ok_w1 = pcall(rex.call, "block.method", {
+                  session_id = sid,
+                  block_id = bid,
+                  method = "write",
+                  args = { data = \(luaQuote("\u{1B}")) }
+                })
+                pcall(rex.sleep, 0.05)
+                local ok_w2 = pcall(rex.call, "block.method", {
+                  session_id = sid,
+                  block_id = bid,
+                  method = "write",
+                  args = { data = \(luaQuote("\u{03}")) }
+                })
+                if not (ok_w1 or ok_w2) then os.exit(1) end
+                """
+                let execResult = runProcessWithTimeout(
+                    executableURL: rexBin,
+                    arguments: ["--autostart=false", "--timeout", "2s", "do", "-e", script],
+                    environment: rexCleanEnvironment(),
+                    captureStdout: false,
+                    timeoutSeconds: 2.8
+                )
+                return execResult.succeeded
+            }
+
+            if let initialPane = item.rexPane, tryInterruptPane(initialPane) {
+                return true
+            }
+            if let pid = item.pid {
+                let liveRexMap = queryRexBlocks(home: home)
+                if let found = liveRexMap[pid], found.location != item.rexPane, tryInterruptPane(found.location) {
+                    return true
+                }
+            }
+        }
+
+        if let pid = item.pid, pid > 1, Darwin.kill(pid, SIGINT) == 0 {
+            return true
+        }
+        if item.sshTarget == nil, let tty = item.tty, !tty.isEmpty {
+            return writeToLocalTTY(ttyName: tty, data: Data("\u{1B}\u{03}".utf8))
+        }
+        return false
     }
 
     private nonisolated static func buildResumeCommand(for item: AgentHistorySessionItem, baseCommand: String) -> String {
@@ -3140,6 +3857,7 @@ final class AgentActivityTracker {
             var db: OpaquePointer?
             if sqlite3_open_v2(codexDBURL.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
                 defer { sqlite3_close(db) }
+                sqlite3_busy_timeout(db, 400)
                 let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
                 // 1. Query rollout_path and physically delete the rollout .jsonl file on disk
@@ -3185,6 +3903,7 @@ final class AgentActivityTracker {
             var logsDB: OpaquePointer?
             if sqlite3_open_v2(logsDBURL.path, &logsDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
                 defer { sqlite3_close(logsDB) }
+                sqlite3_busy_timeout(logsDB, 400)
                 let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
                 let delLogsSQL = "DELETE FROM logs WHERE thread_id = ?;"
                 var stmt: OpaquePointer?
@@ -3262,6 +3981,7 @@ final class AgentActivityTracker {
             var db: OpaquePointer?
             if sqlite3_open_v2(storeDBURL.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
                 defer { sqlite3_close(db) }
+                sqlite3_busy_timeout(db, 400)
                 let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
                 let deleteQueries = [
                     "DELETE FROM turns WHERE session_id = ?;",
@@ -3307,6 +4027,7 @@ final class AgentActivityTracker {
             var sumDB: OpaquePointer?
             if sqlite3_open_v2(summariesDBURL.path, &sumDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
                 defer { sqlite3_close(sumDB) }
+                sqlite3_busy_timeout(sumDB, 400)
                 let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
                 let delSQL = "DELETE FROM conversation_summaries WHERE conversation_id = ?;"
                 var stmt: OpaquePointer?
@@ -3379,11 +4100,13 @@ final class AgentActivityTracker {
             guard FileManager.default.fileExists(atPath: url.path) else { return nil }
             var handle: OpaquePointer?
             if sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+                sqlite3_busy_timeout(handle, 400)
                 return handle
             }
             if let handle { sqlite3_close(handle) }
             handle = nil
             if sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+                sqlite3_busy_timeout(handle, 400)
                 return handle
             }
             if let handle { sqlite3_close(handle) }
@@ -3948,7 +4671,8 @@ final class AgentActivityTracker {
         let cmdLine = "\(effectiveCmd)\n"
 
         let script = """
-        local clients = rex.call("client.list").clients or {}
+        local ok_c, c_res = pcall(rex.call, "client.list")
+        local clients = (ok_c and c_res and c_res.clients) or {}
         local sid = nil
         for _, c in ipairs(clients) do
           if c.info and c.info.kind == "app" and c.connection_state == "connected" then
@@ -3959,20 +4683,21 @@ final class AgentActivityTracker {
           end
         end
         if not sid then
-          local sessions = rex.call("session.list").sessions or {}
+          local ok_s, s_res = pcall(rex.call, "session.list")
+          local sessions = (ok_s and s_res and s_res.sessions) or {}
           if #sessions > 0 then
             sid = sessions[1].session_id
           end
         end
         if sid then
-          rex.call("session.attach", {session_id = sid})
+          pcall(rex.call, "session.attach", {session_id = sid})
         else
-          local created = rex.call("session.create", {label = \(luaQuote(dirName.isEmpty ? "workspace" : dirName))})
-          sid = created and created.session_id
+          local ok_cr, created = pcall(rex.call, "session.create", {label = \(luaQuote(dirName.isEmpty ? "workspace" : dirName))})
+          sid = ok_cr and created and created.session_id
         end
-        if not sid then return false end
+        if not sid then os.exit(1) end
 
-        local res = rex.call("session.new_window", {
+        local ok_nw, res = pcall(rex.call, "session.new_window", {
           session_id = sid,
           window_label = \(luaQuote(tabLabel)),
           focus = true,
@@ -3988,6 +4713,7 @@ final class AgentActivityTracker {
             }
           }
         })
+        if not ok_nw or not res then os.exit(1) end
         local wid = res and res.window_id
         local bid = res and res.block_ids and res.block_ids[1]
         if wid then
@@ -3997,7 +4723,8 @@ final class AgentActivityTracker {
           pcall(rex.call, "session.focus_block", {session_id = sid, block_id = bid})
         end
 
-        local view = rex.call("session.view", {session_id = sid})
+        local ok_v, view = pcall(rex.call, "session.view", {session_id = sid})
+        if not ok_v then view = nil end
         local win_idx = nil
         if wid and view and view.windows then
           for idx, w in ipairs(view.windows) do
@@ -4026,24 +4753,17 @@ final class AgentActivityTracker {
         return true
         """
 
-        let proc = Process()
-        proc.executableURL = rexBin
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "REX_SESSION")
-        env.removeValue(forKey: "REX_BLOCK")
-        env.removeValue(forKey: "REX_SERVER")
-        proc.environment = env
-        proc.arguments = ["--autostart=true", "--timeout", "3s", "do", "-e", script]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-        } catch {
-            return false
-        }
+        let execResult = runProcessWithTimeout(
+            executableURL: rexBin,
+            arguments: ["--autostart=true", "--timeout", "3s", "do", "-e", script],
+            environment: rexCleanEnvironment(),
+            captureStdout: false,
+            timeoutSeconds: 3.5
+        )
+        guard execResult.succeeded else { return false }
 
-        return activateRexApp()
+        _ = activateRexApp()
+        return true
     }
 
     private nonisolated static func performRexSSHLaunch(
@@ -4094,7 +4814,8 @@ final class AgentActivityTracker {
         let sshCommandLine = "ssh -t \(cleanHost) \"\(remoteShellPayload)\"\n"
 
         let script = """
-        local clients = rex.call("client.list").clients or {}
+        local ok_c, c_res = pcall(rex.call, "client.list")
+        local clients = (ok_c and c_res and c_res.clients) or {}
         local sid = nil
         for _, c in ipairs(clients) do
           if c.info and c.info.kind == "app" and c.connection_state == "connected" then
@@ -4105,20 +4826,21 @@ final class AgentActivityTracker {
           end
         end
         if not sid then
-          local sessions = rex.call("session.list").sessions or {}
+          local ok_s, s_res = pcall(rex.call, "session.list")
+          local sessions = (ok_s and s_res and s_res.sessions) or {}
           if #sessions > 0 then
             sid = sessions[1].session_id
           end
         end
         if sid then
-          rex.call("session.attach", {session_id = sid})
+          pcall(rex.call, "session.attach", {session_id = sid})
         else
-          local created = rex.call("session.create", {label = \(luaQuote(cleanHost))})
-          sid = created and created.session_id
+          local ok_cr, created = pcall(rex.call, "session.create", {label = \(luaQuote(cleanHost))})
+          sid = ok_cr and created and created.session_id
         end
-        if not sid then return false end
+        if not sid then os.exit(1) end
 
-        local res = rex.call("session.new_window", {
+        local ok_nw, res = pcall(rex.call, "session.new_window", {
           session_id = sid,
           window_label = \(luaQuote(tabLabel)),
           focus = true,
@@ -4134,6 +4856,7 @@ final class AgentActivityTracker {
             }
           }
         })
+        if not ok_nw or not res then os.exit(1) end
         local wid = res and res.window_id
         local bid = res and res.block_ids and res.block_ids[1]
         if wid then
@@ -4143,7 +4866,8 @@ final class AgentActivityTracker {
           pcall(rex.call, "session.focus_block", {session_id = sid, block_id = bid})
         end
 
-        local view = rex.call("session.view", {session_id = sid})
+        local ok_v, view = pcall(rex.call, "session.view", {session_id = sid})
+        if not ok_v then view = nil end
         local win_idx = nil
         if wid and view and view.windows then
           for idx, w in ipairs(view.windows) do
@@ -4172,24 +4896,17 @@ final class AgentActivityTracker {
         return true
         """
 
-        let proc = Process()
-        proc.executableURL = rexBin
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: "REX_SESSION")
-        env.removeValue(forKey: "REX_BLOCK")
-        env.removeValue(forKey: "REX_SERVER")
-        proc.environment = env
-        proc.arguments = ["--autostart=true", "--timeout", "3s", "do", "-e", script]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-        } catch {
-            return false
-        }
+        let execResult = runProcessWithTimeout(
+            executableURL: rexBin,
+            arguments: ["--autostart=true", "--timeout", "3s", "do", "-e", script],
+            environment: rexCleanEnvironment(),
+            captureStdout: false,
+            timeoutSeconds: 3.5
+        )
+        guard execResult.succeeded else { return false }
 
-        return activateRexApp()
+        _ = activateRexApp()
+        return true
     }
 
     private nonisolated static func luaQuote(_ value: String) -> String {
@@ -4199,6 +4916,7 @@ final class AgentActivityTracker {
             .replacingOccurrences(of: "\r", with: "\\r")
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: "\u{1B}", with: "\\27")
+            .replacingOccurrences(of: "\u{03}", with: "\\003")
         return "\"\(escaped)\""
     }
 

@@ -93,6 +93,48 @@ enum FlatPalette {
     static func hairlineBorder(dark: Bool) -> Color {
         dark ? Color.white.opacity(0.08) : Color(red: 23.0 / 255, green: 24.0 / 255, blue: 26.0 / 255).opacity(0.075)
     }
+
+    static func conflictWarningForeground(dark: Bool) -> Color {
+        dark
+            ? Color(red: 0.98, green: 0.68, blue: 0.22)
+            : Color(red: 0.80, green: 0.38, blue: 0.04)
+    }
+
+    static func conflictWarningBackground(dark: Bool) -> Color {
+        dark
+            ? Color(red: 0.32, green: 0.20, blue: 0.08)
+            : Color(red: 1.0, green: 0.93, blue: 0.82)
+    }
+
+    static func amberAlertForeground(dark: Bool) -> Color {
+        dark
+            ? Color(red: 0.98, green: 0.70, blue: 0.24)
+            : Color(red: 0.82, green: 0.44, blue: 0.06)
+    }
+
+    static func amberAlertBackground(dark: Bool) -> Color {
+        dark
+            ? Color(red: 0.28, green: 0.18, blue: 0.07)
+            : Color(red: 1.0, green: 0.95, blue: 0.86)
+    }
+
+    static func dangerInterruptForeground(dark: Bool) -> Color {
+        dark
+            ? Color(red: 0.98, green: 0.44, blue: 0.48)
+            : Color(red: 0.82, green: 0.18, blue: 0.24)
+    }
+
+    static func dangerInterruptBackground(dark: Bool, hovered: Bool) -> Color {
+        if dark {
+            return hovered
+                ? Color(red: 0.42, green: 0.14, blue: 0.18)
+                : Color(red: 0.28, green: 0.11, blue: 0.14)
+        } else {
+            return hovered
+                ? Color(red: 1.0, green: 0.84, blue: 0.86)
+                : Color(red: 1.0, green: 0.91, blue: 0.92)
+        }
+    }
 }
 
 enum FlatGeometry {
