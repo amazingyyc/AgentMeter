@@ -15,6 +15,7 @@ final class AgentMeterModel {
     static let shared = AgentMeterModel()
 
     var agentActivities: [AgentActivityItem] = []
+    var historicalSessions: [AgentHistorySessionItem] = []
     var recentLaunchWorkspaces: [String] = []
     var customLaunchCommands: [String: String] = [:]
     var preferredLaunchFamily: AgentFamily {
@@ -316,6 +317,37 @@ final class AgentMeterModel {
 
     func refreshLaunchWorkspaces() {
         recentLaunchWorkspaces = agentTracker.discoverRecentWorkspaces(liveItems: agentActivities)
+        refreshHistoricalSessions()
+    }
+
+    func refreshHistoricalSessions() {
+        let liveSnapshot = agentActivities
+        let demoFlag = isDemo
+        Task { @MainActor in
+            historicalSessions = await agentTracker.discoverHistoricalSessions(liveItems: liveSnapshot, isDemo: demoFlag)
+        }
+    }
+
+    func resumeOrFocusHistoricalSession(_ item: AgentHistorySessionItem) {
+        if let onlineID = item.onlineActivityID,
+           let liveItem = agentActivities.first(where: { $0.id == onlineID }) {
+            jumpToAgentSession(liveItem)
+            return
+        }
+        recordRecentWorkspace(item.cwdPath)
+        let baseCmd = launchCommand(for: item.family)
+        Task { @MainActor in
+            _ = await agentTracker.resumeHistoricalSession(item, baseCommand: baseCmd)
+            try? await Task.sleep(for: .milliseconds(900))
+            await pollAgents()
+        }
+    }
+
+    func deleteHistoricalSession(_ item: AgentHistorySessionItem) {
+        historicalSessions.removeAll { $0.id == item.id || $0.sessionID == item.sessionID }
+        Task { @MainActor in
+            _ = await agentTracker.deleteHistoricalSession(item)
+        }
     }
 
     func recordRecentWorkspace(_ path: String) {
@@ -370,6 +402,19 @@ final class AgentMeterModel {
         agentActivities = result.items
         if recentLaunchWorkspaces.isEmpty {
             recentLaunchWorkspaces = agentTracker.discoverRecentWorkspaces(liveItems: result.items)
+        }
+        if historicalSessions.isEmpty {
+            refreshHistoricalSessions()
+        } else {
+            var onlineBySid: [String: String] = [:]
+            for live in result.items {
+                if let sid = live.sessionID, !sid.isEmpty {
+                    onlineBySid[sid] = live.id
+                }
+            }
+            for idx in historicalSessions.indices {
+                historicalSessions[idx].onlineActivityID = onlineBySid[historicalSessions[idx].sessionID]
+            }
         }
         if result.hadNewUnreadCompletion && !isPanelOpen {
             hasUnseenMenuBarCompletion = true

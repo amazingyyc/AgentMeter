@@ -142,6 +142,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        if ProcessInfo.processInfo.arguments.contains("--test-history") {
+            Task { @MainActor in
+                let tracker = AgentActivityTracker()
+                let savedKeys = UserDefaults.standard.stringArray(forKey: AgentActivityTracker.deletedHistoryDefaultsKey)
+                func restoreSavedKeys() {
+                    if let savedKeys {
+                        UserDefaults.standard.set(savedKeys, forKey: AgentActivityTracker.deletedHistoryDefaultsKey)
+                    } else {
+                        UserDefaults.standard.removeObject(forKey: AgentActivityTracker.deletedHistoryDefaultsKey)
+                    }
+                    UserDefaults.standard.synchronize()
+                }
+
+                // 1. Verify live history discovery across all 4 CLI Agent families
+                let liveHist = await tracker.discoverHistoricalSessions(liveItems: [], isDemo: false)
+                let codexCount = liveHist.filter { $0.family == .codex }.count
+                let claudeCount = liveHist.filter { $0.family == .claude }.count
+                let copilotCount = liveHist.filter { $0.family == .copilot }.count
+                let agyCount = liveHist.filter { $0.family == .antigravity }.count
+                print("TEST_HISTORY | total=\(liveHist.count) | codex=\(codexCount) | claude=\(claudeCount) | copilot=\(copilotCount) | antigravity=\(agyCount)")
+                for family in AgentFamily.allCases {
+                    for h in liveHist.filter({ $0.family == family }).prefix(2) {
+                        print("TEST_SAMPLE | family=\(family.shortName) | sid=\(h.sessionID) | cwd=\(h.cwdPath) | title=\(h.title)")
+                    }
+                }
+
+                // 2. Verify delete behavior on demo/synthetic history item
+                let beforeDemo = await tracker.discoverHistoricalSessions(liveItems: [], isDemo: true)
+                guard let target = beforeDemo.first else {
+                    print("TEST_DELETE_FAIL | empty demo history")
+                    restoreSavedKeys()
+                    NSApplication.shared.terminate(nil)
+                    return
+                }
+                let ok = await tracker.deleteHistoricalSession(target)
+                let afterDemo = await tracker.discoverHistoricalSessions(liveItems: [], isDemo: true)
+                let removed = !afterDemo.contains(where: { $0.id == target.id || $0.sessionID == target.sessionID })
+                print("TEST_DELETE_RESULT | success=\(ok && removed) | before=\(beforeDemo.count) | after=\(afterDemo.count) | deleted_id=\(target.id)")
+
+                // 3. Verify physical file-backed deletion on a temporary synthetic entry
+                let tempSid = "00000000-test-delete-session-9999"
+                let home = FileManager.default.homeDirectoryForCurrentUser
+                let dummyProjectDir = home.appendingPathComponent(".claude/projects/-Users-yyc-code-AgentMeter")
+                let dummyJsonl = dummyProjectDir.appendingPathComponent("\(tempSid).jsonl")
+                try? FileManager.default.createDirectory(at: dummyProjectDir, withIntermediateDirectories: true)
+                try? "{\"type\":\"test\"}\n".write(to: dummyJsonl, atomically: true, encoding: .utf8)
+                let existedBefore = FileManager.default.fileExists(atPath: dummyJsonl.path)
+
+                let tempItem = AgentHistorySessionItem(
+                    id: "claude:\(tempSid)",
+                    sessionID: tempSid,
+                    family: .claude,
+                    title: "Temp Test Session",
+                    workspace: "AgentMeter",
+                    cwdPath: "/Users/yyc/code/AgentMeter",
+                    gitBranch: nil,
+                    updatedAt: Date()
+                )
+                let model = AgentMeterModel.shared
+                model.historicalSessions.insert(tempItem, at: 0)
+                model.deleteHistoricalSession(tempItem)
+                try? await Task.sleep(for: .milliseconds(350))
+                let modelRemoved = !model.historicalSessions.contains(where: { $0.sessionID == tempSid })
+                let persistedDeleted = AgentActivityTracker.loadDeletedHistoryKeys().contains(tempSid)
+                let filePhysicallyDeleted = !FileManager.default.fileExists(atPath: dummyJsonl.path)
+                print("TEST_PHYSICAL_DELETE | success=\(existedBefore && modelRemoved && persistedDeleted && filePhysicallyDeleted) | file_existed_before=\(existedBefore) | file_deleted=\(filePhysicallyDeleted)")
+
+                restoreSavedKeys()
+                NSApplication.shared.terminate(nil)
+            }
+            return
+        }
         let isPreview = ProcessInfo.processInfo.arguments.contains("--preview")
         NSApplication.shared.setActivationPolicy(isPreview ? .regular : .accessory)
         AgentMeterModel.shared.applyAppearance()

@@ -19,7 +19,7 @@ A native macOS menu bar CLI Agent monitor (**Rex terminal only**). It detects ac
 - **Stop Babysitting `y/n` Prompts**: Get an instant amber menu bar alert the moment an agent pauses for permission, and click **`Allow ⏎`** or **`Deny Esc`** inline without leaving your current window.
 - **No More Tab Hunting**: Preview the latest terminal output of all local and SSH sessions in one place, and press **`⌥ + Return`** (or click any card) to jump straight to the exact **Rex** window and tab.
 - **Prevent Mid-Task Context Compaction**: Monitor each session's 5-segment context window usage meter (`%`) at a glance before auto-compaction catches you off guard.
-- **1-Click Session Launch**: Start a new Claude, Codex, Copilot, or Antigravity session in any recent workspace directory directly from the **`+`** menu.
+- **1-Click Session Launch & History Resume**: Start a new Claude, Codex, Copilot, or Antigravity session in any recent workspace directory, or browse and search all historical sessions to resume them in **Rex** with a single click.
 
 ## Keyboard Shortcuts
 
@@ -62,4 +62,5 @@ open -n "build/Agent Meter.app" --args --demo --show-panel
 - [x] **Inline Quick Reply**: Send short follow-up prompts or slash commands (e.g., `/compact`, `continue`) directly from the menu bar popover to the target Rex session without switching windows.
 - [x] **Prompt Cache Warm Timer**: Display a 5-minute warm cache countdown on newly completed/idle sessions (Claude Code, Codex CLI, etc.) so you can follow up before prompt cache eviction causes slow TTFT and costly token re-prefills.
 - [x] **Launch at Login**: Automatically start Agent Meter in the background when logging into macOS.
+- [x] **Historical Session Resume**: Browse, filter, and search local historical sessions across Claude Code, Codex CLI, Copilot CLI, and Antigravity, and resume any conversation in a new Rex tab with one click.
 

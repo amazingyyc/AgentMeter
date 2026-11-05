@@ -19,7 +19,7 @@
 - **告别「保姆式盯梢」与权限卡死**：当后台 Agent 停在 `y/n` 等待权限确认时，菜单栏图标立即亮起琥珀色提醒；无需切换窗口，直接在菜单栏点击 **`允许 ⏎`** 或 **`拒绝 Esc`** 原地放行。
 - **不再来回翻找终端与 Tab**：集中预览本机与远程 SSH 会话的最新终端输出，按 **`⌥ + Return`**（或点击任意卡片）即可一键精准跳转到对应的 **Rex** 窗口与 Tab。
 - **提前预警 Context 爆仓压缩**：内置 5 段式上下文容量指示（`%`），在任务中途触发自动压缩（auto-compact）前及时感知。
-- **一键开启新 Agent 会话**：在面板点击 **`+`** 即可选择常用工作目录，直接在 Rex 新建 Tab 启动对应的 CLI Agent。
+- **一键新建或恢复历史 Agent 会话**：在面板点击 **`+`** 或历史图标即可选择常用工作目录启动新会话，或检索本机所有历史会话并在 **Rex** 中一键恢复上下文。
 
 ## 全局快捷键
 
@@ -62,4 +62,5 @@ open -n "build/Agent Meter.app" --args --demo --show-panel
 - [x] **菜单栏内直接快捷回复（Inline Quick Reply）**：支持在面板卡片内直接输入一句话指令或快捷发送常用命令（如 `/compact`、`continue`）至对应的 Rex 终端，无需切换窗口。
 - [x] **Prompt Cache 热缓存保温倒计时（Prompt Cache Warm Timer）**：针对刚完成或空闲的会话（Claude Code、Codex CLI 等）提供 5 分钟热缓存倒计时提醒，避免闲置超时导致缓存失效（Cache Miss）、响应变慢与额度额外消耗。
 - [x] **开机自动启动（Launch at Login）**：支持登录 macOS 时在后台自动启动 Agent Meter。
+- [x] **历史会话搜索与一键恢复（Historical Session Resume）**：自动扫描并检索本机 Claude Code、Codex CLI、Copilot CLI 与 Antigravity 的历史会话记录，支持在 Rex 新建 Tab 中一键恢复任意历史对话。
 

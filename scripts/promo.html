@@ -71,7 +71,7 @@
     will-change: transform;
   }
 
-  /* macOS Sequoia / Sonoma Rich Aurora Wallpaper */
+  /* macOS Sequoia Rich Aurora Wallpaper */
   .macos-wallpaper {
     position: absolute;
     inset: -40px;
@@ -279,14 +279,19 @@
     gap: 9px;
   }
   .am-logo-box {
-    width: 32px;
-    height: 32px;
-    border-radius: 9px;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
     background: linear-gradient(135deg, #262930, #121419);
     display: flex;
     align-items: center;
     justify-content: center;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+  }
+  .am-logo-box.history-mode {
+    background: #FFFFFF;
+    border: 1px solid var(--am-border);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
   }
   .am-hdr-title {
     font-size: 15px;
@@ -306,26 +311,64 @@
     color: #0D99FF;
   }
 
+  /* Mode Segmented Switcher in Header (New | History) */
+  .am-mode-switcher {
+    display: none;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--am-track);
+    border: 1px solid var(--am-border);
+  }
+  .am-mode-switcher.visible {
+    display: flex;
+  }
+  .am-mode-pill {
+    padding: 4px 11px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--am-ink2);
+  }
+  .am-mode-pill.active {
+    background: #FFFFFF;
+    color: var(--am-ink);
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  }
+
   .am-hdr-btns {
     display: flex;
     gap: 7px;
   }
   .am-circle-btn {
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     background: #FFFFFF;
     border: 1px solid var(--am-border);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
     color: var(--am-ink);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   }
   .am-circle-btn.active {
     background: #ECEAE4;
     transform: scale(0.94);
+  }
+  .am-back-btn {
+    display: none;
+    padding: 6px 13px;
+    border-radius: 999px;
+    background: #FFFFFF;
+    border: 1px solid var(--am-border);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--am-ink);
+  }
+  .am-back-btn.visible {
+    display: inline-flex;
   }
 
   /* Section Toolbar: AGENT ACTIVITY + Filter */
@@ -436,8 +479,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 13px;
-    font-weight: 700;
     flex-shrink: 0;
     margin-top: 1px;
   }
@@ -498,7 +539,7 @@
   .am-sub {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 4.5px;
     color: var(--am-ink2);
   }
   .am-telem {
@@ -650,48 +691,125 @@
     color: var(--am-ink2);
   }
 
-  /* Quick Launch View inside Popover */
-  .am-quick-launch {
+  /* ==========================================================================
+     HISTORY SESSION VIEW (Exact match to AgentMeterPanel.swift)
+     ========================================================================== */
+  .am-history-view {
     display: none;
     flex-direction: column;
-    gap: 10px;
+    gap: 9px;
   }
-  .am-quick-launch.visible {
+  .am-history-view.visible {
     display: flex;
   }
-  .am-ql-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 5px;
-    padding: 4px;
-    border-radius: 12px;
-    background: var(--am-track);
-  }
-  .am-ql-item {
-    padding: 7px 4px;
-    border-radius: 9px;
-    text-align: center;
+  .am-search-box {
+    background: #FFFFFF;
+    border: 1px solid var(--am-border);
+    border-radius: 10px;
+    padding: 7px 11px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-mono);
     font-size: 10.5px;
+    color: var(--am-ink3);
+  }
+  .am-hist-filters {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .am-hf-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3.5px;
+    padding: 4.5px 8.5px;
+    border-radius: 999px;
+    background: var(--am-track);
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--am-ink2);
+  }
+  .am-hf-pill.active {
+    background: #FFFFFF;
+    color: var(--am-ink);
+    font-weight: 600;
+    border: 1px solid var(--am-border);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+  .am-hf-count {
+    font-size: 9.5px;
+    font-weight: 600;
+    opacity: 0.72;
+  }
+
+  .am-hist-row {
+    background: #FFFFFF;
+    border: 1px solid var(--am-border);
+    border-radius: 12px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 11px;
+  }
+  .am-hist-row.hovered-resume {
+    border-color: rgba(204, 89, 46, 0.42);
+    background: #FCFCFB;
+  }
+  .am-hist-row.confirming-del {
+    border-color: rgba(244, 63, 94, 0.52);
+    border-width: 1.2px;
+  }
+  .am-hist-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .am-resume-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.04);
+    font-size: 10px;
     font-weight: 600;
     color: var(--am-ink2);
   }
-  .am-ql-item.active {
-    background: #FFFFFF;
+  .am-hist-row.hovered-resume .am-resume-pill {
+    background: rgba(204, 89, 46, 0.12);
     color: #CC592E;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   }
-  .am-ql-ws {
-    background: #FFFFFF;
-    border-radius: 11px;
-    padding: 9px 11px;
-    border: 1px solid var(--am-border);
-    display: flex;
+  .am-trash-btn {
+    width: 22px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.04);
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
+    color: var(--am-ink2);
   }
-  .am-ql-ws.clicked {
-    background: #FFF2EC;
-    border-color: rgba(204, 89, 46, 0.45);
+  .am-confirm-del-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3.5px 8px;
+    border-radius: 999px;
+    background: #FFE6EA;
+    border: 1px solid rgba(214, 36, 56, 0.35);
+    color: #D62438;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .am-cancel-del-btn {
+    padding: 3.5px 7.5px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.045);
+    border: 1px solid var(--am-border);
+    color: var(--am-ink2);
+    font-size: 10px;
+    font-weight: 500;
   }
 
   .am-footer {
@@ -706,32 +824,32 @@
   }
 
   /* ==========================================================================
-     MINIMALIST APPLE-STYLE SUBTITLE PILL (BOTTOM CENTER, 1 SHORT LINE)
+     ULTRA-SHORT MINIMALIST HUD BADGE (BOTTOM CENTER, 2-4 WORDS MAX)
      ========================================================================== */
   .minimal-hud-pill {
     position: absolute;
-    bottom: 22px;
+    bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 80;
-    padding: 8px 20px;
+    padding: 6.5px 16px;
     border-radius: 999px;
-    background: rgba(15, 18, 26, 0.82);
+    background: rgba(15, 18, 26, 0.78);
     backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.16);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
     color: #FFFFFF;
-    font-size: 13.5px;
-    font-weight: 500;
-    letter-spacing: -0.1px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: 0.1px;
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 8px;
     white-space: nowrap;
   }
   .hud-dot {
-    width: 7px;
-    height: 7px;
+    width: 6.5px;
+    height: 6.5px;
     border-radius: 50%;
     background: #F43F5E;
   }
@@ -797,6 +915,60 @@
 </head>
 <body>
 
+  <!-- Reusable Authentic SF-Symbol SVG Icons -->
+  <svg width="0" height="0" style="position:absolute;">
+    <defs>
+      <!-- sparkle (Claude) -->
+      <symbol id="sf-sparkle" viewBox="0 0 16 16">
+        <path d="M8 1.5C8.35 4.8 11.2 7.65 14.5 8C11.2 8.35 8.35 11.2 8 14.5C7.65 11.2 4.8 8.35 1.5 8C4.8 7.65 7.65 4.8 8 1.5Z" fill="currentColor"/>
+      </symbol>
+      <!-- terminal.fill (Codex) -->
+      <symbol id="sf-terminal" viewBox="0 0 16 16">
+        <rect x="1.5" y="2.5" width="13" height="11" rx="2.5" fill="currentColor"/>
+        <path d="M4.5 6L7 8L4.5 10M8 10.2H11" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <!-- sparkles (Copilot) -->
+      <symbol id="sf-sparkles" viewBox="0 0 16 16">
+        <path d="M6.5 2C6.8 4.5 8.8 6.5 11.3 6.8C8.8 7.1 6.8 9.1 6.5 11.6C6.2 9.1 4.2 7.1 1.7 6.8C4.2 6.5 6.2 4.5 6.5 2Z" fill="currentColor"/>
+        <path d="M12.2 9.2C12.4 10.6 13.4 11.6 14.8 11.8C13.4 12 12.4 13 12.2 14.4C12 13 11 12 9.6 11.8C11 11.6 12 10.6 12.2 9.2Z" fill="currentColor"/>
+      </symbol>
+      <!-- atom (Antigravity) -->
+      <symbol id="sf-atom" viewBox="0 0 16 16">
+        <ellipse cx="8" cy="8" rx="6.2" ry="2.6" transform="rotate(30 8 8)" fill="none" stroke="currentColor" stroke-width="1.35"/>
+        <ellipse cx="8" cy="8" rx="6.2" ry="2.6" transform="rotate(-30 8 8)" fill="none" stroke="currentColor" stroke-width="1.35"/>
+        <circle cx="8" cy="8" r="1.4" fill="currentColor"/>
+      </symbol>
+      <!-- clock.arrow.circlepath (History) -->
+      <symbol id="sf-history" viewBox="0 0 16 16">
+        <path d="M2.6 5.3A5.8 5.8 0 1 1 2.3 9.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <path d="M2.2 2.4V5.6H5.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M8 5.2V8.2L10.2 9.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <!-- plus -->
+      <symbol id="sf-plus" viewBox="0 0 16 16">
+        <path d="M8 3.2V12.8M3.2 8H12.8" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"/>
+      </symbol>
+      <!-- gearshape -->
+      <symbol id="sf-gear" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="2.3" fill="none" stroke="currentColor" stroke-width="1.45"/>
+        <path d="M8 2.1V3.4M8 12.6V13.9M2.1 8H3.4M12.6 8H13.9M3.8 3.8L4.7 4.7M11.3 11.3L12.2 12.2M12.2 3.8L11.3 4.7M4.7 11.3L3.8 12.2" stroke="currentColor" stroke-width="1.45" stroke-linecap="round"/>
+      </symbol>
+      <!-- folder -->
+      <symbol id="sf-folder" viewBox="0 0 14 14">
+        <path d="M1.5 3.8C1.5 3.1 2.05 2.5 2.75 2.5H5.3L6.6 3.9H11.25C11.95 3.9 12.5 4.45 12.5 5.15V10.25C12.5 10.95 11.95 11.5 11.25 11.5H2.75C2.05 11.5 1.5 10.95 1.5 10.25V3.8Z" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
+      </symbol>
+      <!-- trash -->
+      <symbol id="sf-trash" viewBox="0 0 14 14">
+        <path d="M2.5 3.8H11.5M5.2 3.8V2.6C5.2 2.25 5.45 2 5.8 2H8.2C8.55 2 8.8 2.25 8.8 2.6V3.8M3.6 3.8L4.1 11.2C4.15 11.65 4.5 12 4.95 12H9.05C9.5 12 9.85 11.65 9.9 11.2L10.4 3.8" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+      </symbol>
+      <!-- magnifyingglass -->
+      <symbol id="sf-search" viewBox="0 0 14 14">
+        <circle cx="6.2" cy="6.2" r="4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M9.3 9.3L12 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </symbol>
+    </defs>
+  </svg>
+
   <div class="viewport" id="viewport">
     <div class="desktop-camera" id="camera">
       <div class="macos-wallpaper"></div>
@@ -822,7 +994,7 @@
           </div>
           <span>Wi-Fi</span>
           <span>100%</span>
-          <span>Wed 17:42</span>
+          <span>Thu 14:20</span>
         </div>
       </div>
 
@@ -834,7 +1006,7 @@
       <div class="rex-win focused" id="win1" style="top: 58px; left: 46px; width: 490px; height: 280px; z-index: 15;">
         <div class="rex-titlebar">
           <div class="win-lights"><span class="wl-r"></span><span class="wl-y"></span><span class="wl-g"></span></div>
-          <div class="rex-tabs">
+          <div class="rex-tabs" id="win1Tabs">
             <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>1: migrate-agentmeter</div>
             <div class="rex-tab">2: logs</div>
           </div>
@@ -879,21 +1051,41 @@
       <div class="am-popover" id="popover">
         <div class="am-hdr">
           <div class="am-hdr-left">
-            <div class="am-logo-box">
-              <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
+            <div class="am-logo-box" id="popLogoBox">
+              <!-- Brand Emblem (shown in main view) -->
+              <svg id="emblemSvg" width="16" height="12" viewBox="0 0 16 12" fill="none">
                 <path d="M2 2.5L5.5 6L2 9.5" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                 <line x1="8.5" y1="2.5" x2="14" y2="2.5" stroke="#2EE59D" stroke-width="1.8" stroke-linecap="round"/>
                 <line x1="8.5" y1="6" x2="12.5" y2="6" stroke="#3AA9FF" stroke-width="1.8" stroke-linecap="round"/>
                 <line x1="8.5" y1="9.5" x2="10.5" y2="9.5" stroke="#8E95A5" stroke-width="1.8" stroke-linecap="round"/>
               </svg>
+              <!-- History Clock Emblem (shown in History view, matching AgentMeterPanel.swift:127) -->
+              <svg id="historyHdrSvg" width="16" height="16" style="display:none; color:#CC592E;">
+                <use href="#sf-history"/>
+              </svg>
             </div>
             <span class="am-hdr-title" id="popTitle">Agent Meter</span>
             <span class="am-hdr-pill" id="popBadge">1 Confirm</span>
+
+            <!-- Mode Switcher (New | History 37) -->
+            <div class="am-mode-switcher" id="popModeSwitcher">
+              <span class="am-mode-pill">New</span>
+              <span class="am-mode-pill active">History 37</span>
+            </div>
           </div>
-          <div class="am-hdr-btns">
-            <div class="am-circle-btn" id="btnPlus">+</div>
-            <div class="am-circle-btn">⚙︎</div>
+
+          <div class="am-hdr-btns" id="popHdrBtns">
+            <div class="am-circle-btn" id="btnPlus">
+              <svg width="13.5" height="13.5"><use href="#sf-plus"/></svg>
+            </div>
+            <div class="am-circle-btn" id="btnHistory">
+              <svg width="14" height="14"><use href="#sf-history"/></svg>
+            </div>
+            <div class="am-circle-btn">
+              <svg width="14" height="14"><use href="#sf-gear"/></svg>
+            </div>
           </div>
+          <div class="am-back-btn" id="popBackBtn">Back</div>
         </div>
 
         <div class="am-toolbar" id="popToolbar">
@@ -908,12 +1100,15 @@
           </div>
         </div>
 
+        <!-- MAIN LIVE SESSION LIST -->
         <div class="am-list" id="popList">
           <!-- Card 1: Claude Code -->
           <div class="am-card needs-input" id="card1">
             <div class="am-close-badge">✕</div>
             <div class="am-card-hdr">
-              <div class="am-icon" style="background:#FFF0E8; color:#CC592E;">✦</div>
+              <div class="am-icon" style="background:#FFF0E8; color:#CC592E;">
+                <svg width="15" height="15"><use href="#sf-sparkle"/></svg>
+              </div>
               <div class="am-rows">
                 <div class="am-r1">
                   <span class="am-c-title">migrate-agentmeter</span>
@@ -974,7 +1169,9 @@
           <div class="am-card" id="card2">
             <div class="am-close-badge">✕</div>
             <div class="am-card-hdr">
-              <div class="am-icon" style="background:#EBFBF3; color:#148F61;">❯_</div>
+              <div class="am-icon" style="background:#EBFBF3; color:#148F61;">
+                <svg width="15" height="15"><use href="#sf-terminal"/></svg>
+              </div>
               <div class="am-rows">
                 <div class="am-r1">
                   <span class="am-c-title">scheduler-kernel</span>
@@ -1013,7 +1210,9 @@
           <!-- Card 3: Copilot CLI -->
           <div class="am-card" style="padding: 9px 13px;">
             <div class="am-card-hdr">
-              <div class="am-icon" style="width:28px; height:28px; background:#EDF4FF; color:#2970E0;">✦</div>
+              <div class="am-icon" style="width:28px; height:28px; background:#EDF4FF; color:#2970E0;">
+                <svg width="14" height="14"><use href="#sf-sparkles"/></svg>
+              </div>
               <div class="am-rows">
                 <div class="am-r1">
                   <span class="am-c-title">auth-gateway</span>
@@ -1036,29 +1235,121 @@
           </div>
         </div>
 
-        <!-- Quick Launch View (+) -->
-        <div class="am-quick-launch" id="popLaunch">
-          <div style="font-size:10.5px; font-weight:600; color:var(--am-ink2);">SELECT CLI AGENT</div>
-          <div class="am-ql-grid">
-            <div class="am-ql-item">Codex</div>
-            <div class="am-ql-item active">Claude</div>
-            <div class="am-ql-item">Copilot</div>
-            <div class="am-ql-item">Antigravity</div>
+        <!-- HISTORY SESSION RESUME & DELETE VIEW (Exact Match to AgentMeterPanel.swift) -->
+        <div class="am-history-view" id="popHistory">
+          <div class="am-search-box">
+            <svg width="12" height="12" style="color:var(--am-ink2);"><use href="#sf-search"/></svg>
+            <span>Search session title, prompt, or project…</span>
           </div>
-          <div style="font-size:10.5px; font-weight:600; color:var(--am-ink2); margin-top:2px;">WORKSPACE (CLICK TO LAUNCH IN REX)</div>
-          <div class="am-ql-ws" id="qlWs1">
-            <div>
-              <div style="font-size:12px; font-weight:600; color:var(--am-ink);">AgentMeter</div>
-              <div style="font-family:var(--font-mono); font-size:9.5px; color:var(--am-ink2);">~/code/AgentMeter</div>
-            </div>
-            <span style="font-size:10px; font-weight:600; color:#CC592E; background:#FFF0E8; padding:3.5px 8px; border-radius:999px;">Launch Claude ↗</span>
+
+          <div class="am-hist-filters">
+            <span class="am-hf-pill active">
+              <span>All</span>
+              <span class="am-hf-count">37</span>
+            </span>
+            <span class="am-hf-pill">
+              <svg width="10" height="10" style="color:var(--am-ink2);"><use href="#sf-terminal"/></svg>
+              <span>Codex</span>
+              <span class="am-hf-count">10</span>
+            </span>
+            <span class="am-hf-pill">
+              <svg width="10" height="10" style="color:var(--am-ink2);"><use href="#sf-sparkle"/></svg>
+              <span>Claude</span>
+              <span class="am-hf-count">15</span>
+            </span>
+            <span class="am-hf-pill">
+              <svg width="10" height="10" style="color:var(--am-ink2);"><use href="#sf-sparkles"/></svg>
+              <span>Copilot</span>
+              <span class="am-hf-count">3</span>
+            </span>
+            <span class="am-hf-pill">
+              <svg width="10" height="10" style="color:var(--am-ink2);"><use href="#sf-atom"/></svg>
+              <span>Antigravity</span>
+              <span class="am-hf-count">9</span>
+            </span>
           </div>
-          <div class="am-ql-ws">
-            <div>
-              <div style="font-size:12px; font-weight:600; color:var(--am-ink);">scheduler-kernel</div>
-              <div style="font-family:var(--font-mono); font-size:9.5px; color:var(--am-ink2);">~/code/scheduler-kernel</div>
+
+          <!-- History Row 1: Resumed in Rex -->
+          <div class="am-hist-row" id="histRow1">
+            <div class="am-icon" style="background:#FFF0E8; color:#CC592E;">
+              <svg width="15" height="15"><use href="#sf-sparkle"/></svg>
             </div>
-            <span style="font-size:10px; font-weight:600; color:var(--am-ink2); background:rgba(0,0,0,0.04); padding:3.5px 8px; border-radius:999px;">Launch Claude ↗</span>
+            <div class="am-rows">
+              <div class="am-r1">
+                <span class="am-c-title">RoboDojo Embodied AI Benchmark</span>
+                <div class="am-hist-actions">
+                  <span class="am-resume-pill" id="histRow1Resume">Resume ↗</span>
+                  <span class="am-trash-btn">
+                    <svg width="10.5" height="10.5"><use href="#sf-trash"/></svg>
+                  </span>
+                </div>
+              </div>
+              <div class="am-r2">
+                <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
+                  <span style="color:#CC592E; font-family:var(--font-sans); font-weight:600; font-size:10.5px;">Claude</span>
+                  <span>·</span>
+                  <svg width="10" height="10" style="color:var(--am-ink3);"><use href="#sf-folder"/></svg>
+                  <span>~/code/Papers</span>
+                  <span>·</span>
+                  <span style="color:var(--am-ink3);">main</span>
+                </div>
+                <span style="font-size:10px; color:var(--am-ink3);">2h ago</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- History Row 2: Demonstrates Safe 2-Step Physical Delete -->
+          <div class="am-hist-row" id="histRow2">
+            <div class="am-icon" style="background:#EBFBF3; color:#148F61;">
+              <svg width="15" height="15"><use href="#sf-terminal"/></svg>
+            </div>
+            <div class="am-rows">
+              <div class="am-r1">
+                <span class="am-c-title">Lock-free ring buffer test</span>
+                <div class="am-hist-actions" id="histRow2Actions">
+                  <span class="am-resume-pill">Resume ↗</span>
+                  <span class="am-trash-btn" id="histRow2Trash">
+                    <svg width="10.5" height="10.5"><use href="#sf-trash"/></svg>
+                  </span>
+                </div>
+              </div>
+              <div class="am-r2">
+                <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
+                  <span style="color:#148F61; font-family:var(--font-sans); font-weight:600; font-size:10.5px;">Codex</span>
+                  <span>·</span>
+                  <svg width="10" height="10" style="color:var(--am-ink3);"><use href="#sf-folder"/></svg>
+                  <span>~/code/scheduler-kernel</span>
+                </div>
+                <span style="font-size:10px; color:var(--am-ink3);">1d ago</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- History Row 3: Antigravity -->
+          <div class="am-hist-row">
+            <div class="am-icon" style="background:#FFF3E0; color:#C26B1A;">
+              <svg width="15" height="15"><use href="#sf-atom"/></svg>
+            </div>
+            <div class="am-rows">
+              <div class="am-r1">
+                <span class="am-c-title">Markdown theme &amp; syntax config</span>
+                <div class="am-hist-actions">
+                  <span class="am-resume-pill">Resume ↗</span>
+                  <span class="am-trash-btn">
+                    <svg width="10.5" height="10.5"><use href="#sf-trash"/></svg>
+                  </span>
+                </div>
+              </div>
+              <div class="am-r2">
+                <div class="am-sub" style="font-family:var(--font-mono); font-size:10px;">
+                  <span style="color:#C26B1A; font-family:var(--font-sans); font-weight:600; font-size:10.5px;">Antigravity</span>
+                  <span>·</span>
+                  <svg width="10" height="10" style="color:var(--am-ink3);"><use href="#sf-folder"/></svg>
+                  <span>~/code</span>
+                </div>
+                <span style="font-size:10px; color:var(--am-ink3);">3d ago</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1077,10 +1368,10 @@
       </div>
     </div>
 
-    <!-- Single Concise Subtitle Pill at Bottom Center -->
+    <!-- Ultra-Minimalist 2-4 Word Pill at Bottom Center -->
     <div class="minimal-hud-pill" id="hudPill">
       <span class="hud-dot" id="hudDot"></span>
-      <span id="hudText">Constantly switching between terminals to check &amp; reply to agents wastes time</span>
+      <span id="hudText">Manual Terminal Switching</span>
     </div>
   </div>
 
@@ -1091,14 +1382,15 @@
       <button class="c-btn" id="btnRestart">↺ Restart</button>
     </div>
     <div class="ctrl-group">
-      <button class="c-btn active" data-t="0">1. Terminal Juggling</button>
-      <button class="c-btn" data-t="6.5">2. Menu Bar Preview</button>
-      <button class="c-btn" data-t="11.5">3. Inline Yes/No &amp; Reply</button>
-      <button class="c-btn" data-t="19.5">4. Quick Jump</button>
-      <button class="c-btn" data-t="24.0">5. + New Agent</button>
+      <button class="c-btn active" data-t="0">1. Tab Hunting</button>
+      <button class="c-btn" data-t="5.5">2. Live Monitor &amp; Cache</button>
+      <button class="c-btn" data-t="10.2">3. Inline Yes/No</button>
+      <button class="c-btn" data-t="14.2">4. Quick Reply</button>
+      <button class="c-btn" data-t="19.2">5. ⌥⏎ Rex Jump</button>
+      <button class="c-btn" data-t="23.5">6. ↺ History Resume</button>
     </div>
     <div class="ctrl-group">
-      <span id="timerTxt" style="font-family:var(--font-mono); color:#9CA3AF;">0.0s / 28.5s</span>
+      <span id="timerTxt" style="font-family:var(--font-mono); color:#9CA3AF;">0.0s / 30.0s</span>
     </div>
   </div>
 
@@ -1108,44 +1400,53 @@
     document.body.classList.add('clean-mode');
   }
 
-  const TOTAL = 28.5;
+  const TOTAL = 30.0;
   let t = 0;
   let playing = !location.search.includes('manual=1');
   let lastNow = performance.now();
 
-  const camera      = document.getElementById('camera');
-  const mbBtn       = document.getElementById('mbBtn');
-  const mbDot       = document.getElementById('mbDot');
-  const win1        = document.getElementById('win1');
-  const win2        = document.getElementById('win2');
-  const win3        = document.getElementById('win3');
-  const win1Body    = document.getElementById('win1Body');
-  const popover     = document.getElementById('popover');
-  const popTitle    = document.getElementById('popTitle');
-  const popBadge    = document.getElementById('popBadge');
-  const popToolbar  = document.getElementById('popToolbar');
-  const popList     = document.getElementById('popList');
-  const popLaunch   = document.getElementById('popLaunch');
-  const btnPlus     = document.getElementById('btnPlus');
-  const card1       = document.getElementById('card1');
-  const card2       = document.getElementById('card2');
-  const c1Pill      = document.getElementById('c1Pill');
-  const c1PillTxt   = document.getElementById('c1PillTxt');
-  const c1Bar       = document.getElementById('c1Bar');
-  const c1Code      = document.getElementById('c1Code');
-  const c1ReplyRow  = document.getElementById('c1ReplyRow');
-  const c1ReplyInput= document.getElementById('c1ReplyInput');
-  const c1Send      = document.getElementById('c1Send');
-  const c1ApproveRow= document.getElementById('c1ApproveRow');
-  const c1Allow     = document.getElementById('c1Allow');
-  const qlWs1       = document.getElementById('qlWs1');
+  const camera         = document.getElementById('camera');
+  const mbBtn          = document.getElementById('mbBtn');
+  const mbDot          = document.getElementById('mbDot');
+  const win1           = document.getElementById('win1');
+  const win2           = document.getElementById('win2');
+  const win3           = document.getElementById('win3');
+  const win1Tabs       = document.getElementById('win1Tabs');
+  const win1Body       = document.getElementById('win1Body');
+  const popover        = document.getElementById('popover');
+  const popLogoBox     = document.getElementById('popLogoBox');
+  const emblemSvg      = document.getElementById('emblemSvg');
+  const historyHdrSvg  = document.getElementById('historyHdrSvg');
+  const popTitle       = document.getElementById('popTitle');
+  const popBadge       = document.getElementById('popBadge');
+  const popModeSwitcher= document.getElementById('popModeSwitcher');
+  const popHdrBtns     = document.getElementById('popHdrBtns');
+  const popBackBtn     = document.getElementById('popBackBtn');
+  const popToolbar     = document.getElementById('popToolbar');
+  const popList        = document.getElementById('popList');
+  const popHistory     = document.getElementById('popHistory');
+  const btnHistory     = document.getElementById('btnHistory');
+  const card1          = document.getElementById('card1');
+  const card2          = document.getElementById('card2');
+  const c1Pill         = document.getElementById('c1Pill');
+  const c1PillTxt      = document.getElementById('c1PillTxt');
+  const c1Bar          = document.getElementById('c1Bar');
+  const c1Code         = document.getElementById('c1Code');
+  const c1ReplyRow     = document.getElementById('c1ReplyRow');
+  const c1ReplyInput   = document.getElementById('c1ReplyInput');
+  const c1Send         = document.getElementById('c1Send');
+  const c1ApproveRow   = document.getElementById('c1ApproveRow');
+  const c1Allow        = document.getElementById('c1Allow');
+  const histRow1       = document.getElementById('histRow1');
+  const histRow2       = document.getElementById('histRow2');
+  const histRow2Actions= document.getElementById('histRow2Actions');
 
-  const cursor      = document.getElementById('cursor');
-  const clickRing   = document.getElementById('clickRing');
-  const hudDot      = document.getElementById('hudDot');
-  const hudText     = document.getElementById('hudText');
-  const timerTxt    = document.getElementById('timerTxt');
-  const navBtns     = document.querySelectorAll('[data-t]');
+  const cursor         = document.getElementById('cursor');
+  const clickRing      = document.getElementById('clickRing');
+  const hudDot         = document.getElementById('hudDot');
+  const hudText        = document.getElementById('hudText');
+  const timerTxt       = document.getElementById('timerTxt');
+  const navBtns        = document.querySelectorAll('[data-t]');
 
   function easeInOutCubic(x) {
     x = Math.max(0, Math.min(1, x));
@@ -1171,51 +1472,64 @@
     return kf[kf.length - 1][prop];
   }
 
-  // Cursor trajectory keyframes
+  // Cursor trajectory keyframes (verified against exact DOM bounding boxes)
   const CURSOR_KF = [
     { t: 0.0,  x: 260, y: 170 },
-    { t: 1.2,  x: 260, y: 170 },
-    { t: 1.85, x: 610, y: 220 },
-    { t: 2.8,  x: 610, y: 220 },
-    { t: 3.45, x: 290, y: 390 },
-    { t: 4.4,  x: 290, y: 390 },
-    { t: 5.05, x: 230, y: 160 },
-    { t: 6.3,  x: 230, y: 160 },
-    { t: 7.0,  x: 840, y: 14  },
-    { t: 8.3,  x: 840, y: 14  },
-    { t: 9.1,  x: 780, y: 195 },
-    { t: 11.4, x: 780, y: 195 },
-    { t: 12.1, x: 778, y: 255 },
-    { t: 14.8, x: 778, y: 255 },
-    { t: 15.4, x: 680, y: 244 },
-    { t: 17.3, x: 680, y: 244 },
-    { t: 17.85,x: 935, y: 244 },
-    { t: 19.3, x: 935, y: 244 },
-    { t: 20.1, x: 740, y: 315 },
-    { t: 21.5, x: 740, y: 315 },
-    { t: 22.3, x: 340, y: 380 },
-    { t: 23.8, x: 340, y: 380 },
-    { t: 24.6, x: 906, y: 64  },
-    { t: 25.5, x: 906, y: 64  },
-    { t: 26.2, x: 890, y: 212 },
-    { t: 28.5, x: 890, y: 212 }
+    { t: 1.0,  x: 260, y: 170 },
+    { t: 1.6,  x: 610, y: 220 },
+    { t: 2.5,  x: 610, y: 220 },
+    { t: 3.1,  x: 290, y: 390 },
+    { t: 4.0,  x: 290, y: 390 },
+    { t: 4.6,  x: 230, y: 160 },
+    { t: 5.4,  x: 230, y: 160 },
+    // Click menu bar icon (#mbBtn center: 845, 14) at 6.1s
+    { t: 6.1,  x: 845, y: 14  },
+    { t: 7.2,  x: 845, y: 14  },
+    // Hover over warm cache & context % at 8.0s
+    { t: 8.0,  x: 888, y: 158 },
+    { t: 10.1, x: 888, y: 158 },
+    // Move to Allow ⏎ (#c1Allow center: 790, 244) and click at 11.4s
+    { t: 10.9, x: 790, y: 244 },
+    { t: 13.8, x: 790, y: 244 },
+    // Move to Inline Reply input (#c1ReplyInput: 690, 234) and click at 14.8s
+    { t: 14.6, x: 690, y: 234 },
+    { t: 16.9, x: 690, y: 234 },
+    // Move to Send ⏎ (#c1Send center: 903, 234) and click at 17.6s
+    { t: 17.5, x: 903, y: 234 },
+    { t: 19.0, x: 903, y: 234 },
+    // Move to Card 2 (Codex CLI: 764, 330) and click at 20.6s
+    { t: 19.8, x: 764, y: 330 },
+    { t: 21.0, x: 764, y: 330 },
+    { t: 21.8, x: 340, y: 380 },
+    { t: 23.3, x: 340, y: 380 },
+    // Reopen popover & click History clock button (#btnHistory center: 901, 68) at 24.6s
+    { t: 24.1, x: 901, y: 68  },
+    { t: 25.0, x: 901, y: 68  },
+    // Click Trash on History Row 2 (#histRow2Trash center: 929, 254) at 25.9s -> Confirm Delete (852, 255) at 26.9s
+    { t: 25.7, x: 929, y: 254 },
+    { t: 26.2, x: 929, y: 254 },
+    { t: 26.7, x: 852, y: 255 },
+    { t: 27.3, x: 852, y: 255 },
+    // Click Resume ↗ on History Row 1 (#histRow1Resume center: 880, 187) at 28.3s
+    { t: 28.0, x: 880, y: 187 },
+    { t: 30.0, x: 880, y: 187 }
   ];
 
   // Camera zoom & origin keyframes
   const CAM_KF = [
     { t: 0.0,  s: 1.00, ox: 50, oy: 50 },
-    { t: 6.3,  s: 1.00, ox: 50, oy: 50 },
-    { t: 7.2,  s: 1.22, ox: 82, oy: 18 },
-    { t: 8.3,  s: 1.22, ox: 82, oy: 18 },
-    { t: 9.2,  s: 1.25, ox: 82, oy: 36 },
-    { t: 21.3, s: 1.25, ox: 82, oy: 36 },
-    { t: 22.1, s: 1.06, ox: 35, oy: 65 },
-    { t: 23.8, s: 1.06, ox: 35, oy: 65 },
-    { t: 24.7, s: 1.25, ox: 82, oy: 28 },
-    { t: 28.5, s: 1.25, ox: 82, oy: 28 }
+    { t: 5.4,  s: 1.00, ox: 50, oy: 50 },
+    { t: 6.3,  s: 1.22, ox: 82, oy: 18 },
+    { t: 7.3,  s: 1.22, ox: 82, oy: 18 },
+    { t: 8.1,  s: 1.25, ox: 82, oy: 36 },
+    { t: 20.7, s: 1.25, ox: 82, oy: 36 },
+    { t: 21.5, s: 1.06, ox: 35, oy: 65 },
+    { t: 23.3, s: 1.06, ox: 35, oy: 65 },
+    { t: 24.2, s: 1.25, ox: 82, oy: 30 },
+    { t: 30.0, s: 1.25, ox: 82, oy: 30 }
   ];
 
-  const CLICK_TIMES = [1.85, 3.45, 5.05, 7.0, 13.0, 15.4, 17.85, 21.2, 25.3, 26.8];
+  const CLICK_TIMES = [1.6, 3.1, 4.6, 6.1, 11.4, 14.8, 17.6, 20.6, 24.6, 25.9, 26.9, 28.3];
 
   function focusWin(activeWin) {
     [win1, win2, win3].forEach(w => {
@@ -1242,8 +1556,8 @@
     let ringScale = 0.2;
     for (const tc of CLICK_TIMES) {
       const dt = time - tc;
-      if (dt >= 0 && dt <= 0.45) {
-        const p = dt / 0.45;
+      if (dt >= 0 && dt <= 0.42) {
+        const p = dt / 0.42;
         ringOp = 0.95 * (1 - p);
         ringScale = 0.2 + 1.65 * easeOutCubic(p);
         break;
@@ -1260,44 +1574,45 @@
     camera.style.transform = `scale(${cs.toFixed(4)})`;
 
     // 4. Desktop windows focus state
-    if (time < 1.85) focusWin(win1);
-    else if (time < 3.45) focusWin(win3);
-    else if (time < 5.05) focusWin(win2);
-    else if (time < 21.4) focusWin(win1);
-    else focusWin(win2);
+    if (time < 1.6) focusWin(win1);
+    else if (time < 3.1) focusWin(win3);
+    else if (time < 4.6) focusWin(win2);
+    else if (time < 20.8) focusWin(win1);
+    else if (time < 28.4) focusWin(win2);
+    else focusWin(win1);
 
-    win2.style.borderColor = (time >= 21.4 && time < 24.0) ? '#2EE59D' : '';
+    win2.style.borderColor = (time >= 20.8 && time < 23.5) ? '#2EE59D' : '';
 
-    // 5. Subtitle HUD Pill
-    if (time < 6.5) {
+    // 5. Ultra-short minimal HUD Pill (2-4 words max)
+    if (time < 5.5) {
       hudDot.style.background = '#F43F5E';
-      hudText.textContent = 'Constantly switching between terminals to check & reply to agents wastes time';
-    } else if (time < 11.5) {
+      hudText.textContent = '❌ Terminal Tab Hunting';
+    } else if (time < 10.2) {
       hudDot.style.background = '#0D99FF';
-      hudText.textContent = 'Manage all agents from the macOS menu bar — live output, warm cache & context %';
-    } else if (time < 15.0) {
-      hudDot.style.background = '#F59E0B';
-      hudText.textContent = 'Reply Yes / No inline without switching windows';
-    } else if (time < 19.5) {
-      hudDot.style.background = '#E05A2B';
-      hudText.textContent = 'Send follow-up prompts or /compact directly from the card';
-    } else if (time < 24.0) {
+      hudText.textContent = '⚡ Live Output · 🔥 5m Cache · Context %';
+    } else if (time < 14.2) {
       hudDot.style.background = '#10B981';
-      hudText.textContent = 'Click any session (or press ⌥⏎) to jump straight to its Rex terminal';
+      hudText.textContent = '✓ Inline Yes / No Approval';
+    } else if (time < 19.2) {
+      hudDot.style.background = '#E05A2B';
+      hudText.textContent = '💬 Inline Quick Reply & /compact';
+    } else if (time < 23.5) {
+      hudDot.style.background = '#10B981';
+      hudText.textContent = '⌥⏎ 1-Click Rex Tab Jump';
     } else {
       hudDot.style.background = '#8B5CF6';
-      hudText.textContent = 'Start a new CLI agent session in any workspace with one click';
+      hudText.textContent = 'History Resume & Safe Delete';
     }
 
     // 6. Popover open/close interpolation
     let popProgress = 0;
-    if (time >= 7.05 && time < 21.35) {
-      if (time < 7.30) popProgress = easeOutCubic((time - 7.05) / 0.25);
+    if (time >= 6.15 && time < 20.75) {
+      if (time < 6.40) popProgress = easeOutCubic((time - 6.15) / 0.25);
       else popProgress = 1;
-    } else if (time >= 21.35 && time < 21.60) {
-      popProgress = 1 - easeOutCubic((time - 21.35) / 0.25);
-    } else if (time >= 24.10) {
-      if (time < 24.35) popProgress = easeOutCubic((time - 24.10) / 0.25);
+    } else if (time >= 20.75 && time < 21.00) {
+      popProgress = 1 - easeOutCubic((time - 20.75) / 0.25);
+    } else if (time >= 23.60) {
+      if (time < 23.85) popProgress = easeOutCubic((time - 23.60) / 0.25);
       else popProgress = 1;
     }
     popover.style.opacity = popProgress.toFixed(3);
@@ -1306,8 +1621,8 @@
     popover.style.transform = `translateY(${popY.toFixed(1)}px) scale(${popSc.toFixed(3)})`;
     mbBtn.classList.toggle('active', popProgress > 0.5);
 
-    // 7. Menu bar dot & Card 1 state (Confirm -> Approved Done -> Inline Typing -> Running)
-    if (time < 13.2) {
+    // 7. Menu bar dot & Card 1 state
+    if (time < 11.6) {
       mbDot.className = 'mb-badge-dot';
       popBadge.textContent = '1 Confirm';
       popBadge.className = 'am-hdr-pill';
@@ -1318,8 +1633,12 @@
       c1Code.textContent = '⏺ Bash(zsh scripts/build-app.sh) — Allow?';
       c1ReplyRow.classList.remove('visible');
       c1ApproveRow.classList.remove('hidden');
-      c1Allow.classList.toggle('pressed', time >= 13.0 && time < 13.2);
+      c1Allow.classList.toggle('pressed', time >= 11.4 && time < 11.6);
 
+      win1Tabs.innerHTML = `
+        <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>1: migrate-agentmeter</div>
+        <div class="rex-tab">2: logs</div>
+      `;
       win1Body.innerHTML = `
         <div style="color:#9CA3AF;">$ claude</div>
         <div style="color:#F28B50; margin-top:4px;">⏺ Bash(zsh scripts/build-app.sh)</div>
@@ -1328,7 +1647,7 @@
           <div>❯ 1. Yes, allow (⏎) &nbsp;&nbsp; 2. Always &nbsp;&nbsp; 3. No (Esc)</div>
         </div>
       `;
-    } else if (time < 18.05) {
+    } else if (time < 17.8) {
       mbDot.className = 'mb-badge-dot completed';
       popBadge.textContent = '1 Done';
       popBadge.className = 'am-hdr-pill blue';
@@ -1341,13 +1660,13 @@
       c1ReplyRow.classList.add('visible');
 
       const msg = "run tests and commit";
-      if (time < 15.5) {
+      if (time < 14.9) {
         c1ReplyInput.innerHTML = `<span style="color:var(--am-ink3);">Reply to Rex…</span>`;
       } else {
-        const count = Math.min(msg.length, Math.max(1, Math.floor(((time - 15.5) / 1.55) * msg.length)));
+        const count = Math.min(msg.length, Math.max(1, Math.floor(((time - 14.9) / 1.7) * msg.length)));
         c1ReplyInput.innerHTML = `<span>${msg.slice(0, count)}</span><span class="am-caret"></span>`;
       }
-      c1Send.classList.toggle('pressed', time >= 17.85 && time < 18.05);
+      c1Send.classList.toggle('pressed', time >= 17.6 && time < 17.8);
 
       win1Body.innerHTML = `
         <div style="color:#9CA3AF;">$ claude</div>
@@ -1367,31 +1686,75 @@
       c1ApproveRow.classList.add('hidden');
       c1ReplyRow.classList.remove('visible');
 
-      win1Body.innerHTML = `
-        <div style="color:#9CA3AF;">$ claude</div>
-        <div style="color:#2EE59D; margin-top:4px;">✓ Built: build/Agent Meter.app</div>
-        <div style="color:#F28B50; margin-top:4px;">❯ run tests and commit</div>
-      `;
+      if (time >= 28.4) {
+        win1Tabs.innerHTML = `
+          <div class="rex-tab"><span class="tab-dot" style="background:#E05A2B;"></span>1: migrate-agentmeter</div>
+          <div class="rex-tab active"><span class="tab-dot" style="background:#E05A2B;"></span>★ 2: Claude · RoboDojo</div>
+        `;
+        win1Body.innerHTML = `
+          <div style="color:#9CA3AF;">$ claude --resume d6e685bf-8594-4b52-9bb3-54a3479ac0e7</div>
+          <div style="color:#2EE59D; margin-top:4px;">✓ Resumed session in ~/code/Papers (main)</div>
+          <div style="color:#F28B50; margin-top:4px;">❯ Ready for follow-up prompt...</div>
+        `;
+      } else {
+        win1Body.innerHTML = `
+          <div style="color:#9CA3AF;">$ claude</div>
+          <div style="color:#2EE59D; margin-top:4px;">✓ Built: build/Agent Meter.app</div>
+          <div style="color:#F28B50; margin-top:4px;">❯ run tests and commit</div>
+        `;
+      }
     }
 
-    // 8. Card 2 Hover & Quick Launch View (Step 4)
-    card2.classList.toggle('hovered', time >= 19.8 && time < 21.5);
-    btnPlus.classList.toggle('active', time >= 25.25 && time < 25.5);
+    // 8. Card 2 Hover & History View (Step 6)
+    card2.classList.toggle('hovered', time >= 19.6 && time < 20.9);
+    btnHistory.classList.toggle('active', time >= 24.5 && time < 24.75);
 
-    const inLaunchView = time >= 25.5;
-    popTitle.textContent = inLaunchView ? 'New Agent Session' : 'Agent Meter';
-    popBadge.style.display = inLaunchView ? 'none' : '';
-    popToolbar.style.display = inLaunchView ? 'none' : 'flex';
-    popList.classList.toggle('hidden', inLaunchView);
-    popLaunch.classList.toggle('visible', inLaunchView);
-    qlWs1.classList.toggle('clicked', time >= 26.8);
+    const inHistoryView = time >= 24.75;
+    popLogoBox.classList.toggle('history-mode', inHistoryView);
+    emblemSvg.style.display = inHistoryView ? 'none' : 'block';
+    historyHdrSvg.style.display = inHistoryView ? 'block' : 'none';
+    popTitle.style.display = inHistoryView ? 'none' : '';
+    popBadge.style.display = inHistoryView ? 'none' : '';
+    popModeSwitcher.classList.toggle('visible', inHistoryView);
+    popHdrBtns.style.display = inHistoryView ? 'none' : 'flex';
+    popBackBtn.classList.toggle('visible', inHistoryView);
+    popToolbar.style.display = inHistoryView ? 'none' : 'flex';
+    popList.classList.toggle('hidden', inHistoryView);
+    popHistory.classList.toggle('visible', inHistoryView);
+
+    // History Row 2 Delete Confirmation & Removal
+    if (time < 25.95) {
+      histRow2.style.display = 'flex';
+      histRow2.className = 'am-hist-row';
+      histRow2Actions.innerHTML = `
+        <span class="am-resume-pill">Resume ↗</span>
+        <span class="am-trash-btn" id="histRow2Trash">
+          <svg width="10.5" height="10.5"><use href="#sf-trash"/></svg>
+        </span>
+      `;
+    } else if (time < 27.0) {
+      histRow2.style.display = 'flex';
+      histRow2.className = 'am-hist-row confirming-del';
+      histRow2Actions.innerHTML = `
+        <span class="am-confirm-del-btn" id="histRow2Confirm">
+          <svg width="9.5" height="9.5"><use href="#sf-trash"/></svg>
+          <span>Delete</span>
+        </span>
+        <span class="am-cancel-del-btn">Cancel</span>
+      `;
+    } else {
+      histRow2.style.display = 'none';
+    }
+
+    histRow1.classList.toggle('hovered-resume', time >= 27.6);
 
     // 9. Controls UI update
     let activeNav = 0;
-    if (time >= 24.0) activeNav = 4;
-    else if (time >= 19.5) activeNav = 3;
-    else if (time >= 11.5) activeNav = 2;
-    else if (time >= 6.5) activeNav = 1;
+    if (time >= 23.5) activeNav = 5;
+    else if (time >= 19.2) activeNav = 4;
+    else if (time >= 14.2) activeNav = 3;
+    else if (time >= 10.2) activeNav = 2;
+    else if (time >= 5.5) activeNav = 1;
     navBtns.forEach((b, idx) => b.classList.toggle('active', idx === activeNav));
     timerTxt.textContent = `${time.toFixed(1)}s / ${TOTAL.toFixed(1)}s`;
   };

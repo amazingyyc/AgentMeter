@@ -110,8 +110,21 @@ struct RexPaneLocation: Sendable, Equatable {
     let blockID: String
 }
 
+struct AgentHistorySessionItem: Identifiable, Equatable, Sendable {
+    let id: String
+    let sessionID: String
+    let family: AgentFamily
+    let title: String
+    let workspace: String
+    let cwdPath: String
+    var gitBranch: String? = nil
+    let updatedAt: Date
+    var onlineActivityID: String? = nil
+}
+
 struct AgentActivityItem: Identifiable, Equatable, Sendable {
     let id: String
+    var sessionID: String? = nil
     let family: AgentFamily
     let workspace: String
     var cwdPath: String = ""
@@ -494,6 +507,98 @@ final class AgentActivityTracker {
         }.value
     }
 
+    func resumeHistoricalSession(_ item: AgentHistorySessionItem, baseCommand: String) async -> Bool {
+        let resumeCommand = Self.buildResumeCommand(for: item, baseCommand: baseCommand)
+        return await Task.detached(priority: .userInitiated) {
+            Self.performRexLaunch(
+                family: item.family,
+                cwdPath: item.cwdPath,
+                customCommand: resumeCommand,
+                preferredTabTitle: item.title
+            )
+        }.value
+    }
+
+    nonisolated static let deletedHistoryDefaultsKey = "deletedHistoricalSessionKeys"
+
+    nonisolated static func loadDeletedHistoryKeys() -> Set<String> {
+        let saved = UserDefaults.standard.stringArray(forKey: deletedHistoryDefaultsKey) ?? []
+        return Set(saved)
+    }
+
+    nonisolated static func recordDeletedHistorySession(_ item: AgentHistorySessionItem) {
+        var current = UserDefaults.standard.stringArray(forKey: deletedHistoryDefaultsKey) ?? []
+        let keysToInsert = [
+            item.id,
+            "\(item.family.rawValue):\(item.sessionID)",
+            item.sessionID,
+        ]
+        for key in keysToInsert where !key.isEmpty {
+            current.removeAll { $0 == key }
+            current.insert(key, at: 0)
+        }
+        if current.count > 400 {
+            current = Array(current.prefix(400))
+        }
+        UserDefaults.standard.set(current, forKey: deletedHistoryDefaultsKey)
+    }
+
+    func deleteHistoricalSession(_ item: AgentHistorySessionItem) async -> Bool {
+        Self.recordDeletedHistorySession(item)
+        return await Task.detached(priority: .userInitiated) {
+            Self.performDeleteHistoricalSession(item)
+        }.value
+    }
+
+    func discoverHistoricalSessions(liveItems: [AgentActivityItem], isDemo: Bool = false) async -> [AgentHistorySessionItem] {
+        let deletedKeys = Self.loadDeletedHistoryKeys()
+        if isDemo {
+            let now = Date()
+            let en = AppLanguage.current == .english
+            let demoItems = [
+                AgentHistorySessionItem(
+                    id: "claude:demo-hist-1",
+                    sessionID: "demo-uuid-claude-0001",
+                    family: .claude,
+                    title: en ? "Refactor menu bar inline reply & warm cache timer" : "重构菜单栏内联回复与热缓存倒计时",
+                    workspace: "AgentMeter",
+                    cwdPath: "/Users/yyc/code/AgentMeter",
+                    gitBranch: "main",
+                    updatedAt: now.addingTimeInterval(-3600 * 2)
+                ),
+                AgentHistorySessionItem(
+                    id: "codex:demo-hist-2",
+                    sessionID: "demo-uuid-codex-0002",
+                    family: .codex,
+                    title: en ? "Optimize lock-free work stealing scheduler latency" : "优化无锁 work-stealing 调度器延迟",
+                    workspace: "scheduler-kernel",
+                    cwdPath: "/Users/yyc/code/scheduler-kernel",
+                    gitBranch: "feat/lockfree",
+                    updatedAt: now.addingTimeInterval(-3600 * 18)
+                ),
+                AgentHistorySessionItem(
+                    id: "copilot:demo-hist-3",
+                    sessionID: "demo-uuid-copilot-0003",
+                    family: .copilot,
+                    title: en ? "Fix OAuth token refresh middleware race condition" : "修复 OAuth Token 刷新中间件竞态问题",
+                    workspace: "auth-gateway",
+                    cwdPath: "/Users/yyc/code/auth-gateway",
+                    gitBranch: nil,
+                    updatedAt: now.addingTimeInterval(-86400 * 2)
+                ),
+            ]
+            return demoItems.filter { item in
+                !deletedKeys.contains(item.id)
+                    && !deletedKeys.contains("\(item.family.rawValue):\(item.sessionID)")
+                    && !deletedKeys.contains(item.sessionID)
+            }
+        }
+
+        return await Task.detached(priority: .utility) {
+            Self.collectHistoricalSessions(liveItems: liveItems)
+        }.value
+    }
+
     func discoverRecentWorkspaces(liveItems: [AgentActivityItem]) -> [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         var seen = Set<String>()
@@ -743,6 +848,7 @@ final class AgentActivityTracker {
                 results.append(
                     AgentActivityItem(
                         id: itemID,
+                        sessionID: matchingSession?.sessionID,
                         family: .codex,
                         workspace: proc.workspaceName,
                         cwdPath: proc.cwdPath,
@@ -1465,6 +1571,7 @@ final class AgentActivityTracker {
             items.append(
                 AgentActivityItem(
                     id: itemID,
+                    sessionID: meta?.sessionID,
                     family: .claude,
                     workspace: workspaceName,
                     cwdPath: cwdPath,
@@ -1672,6 +1779,7 @@ final class AgentActivityTracker {
                 items.append(
                     AgentActivityItem(
                         id: itemID,
+                        sessionID: sid,
                         family: .copilot,
                         workspace: workspaceName,
                         cwdPath: cwdPath,
@@ -1789,6 +1897,7 @@ final class AgentActivityTracker {
             items.append(
                 AgentActivityItem(
                     id: itemID,
+                    sessionID: latestHistory.conversationID,
                     family: .antigravity,
                     workspace: workspace,
                     cwdPath: proc.cwdPath,
@@ -1845,27 +1954,32 @@ final class AgentActivityTracker {
         return (isPending, isShutDown, modDate, lastPrompt)
     }
 
-    private nonisolated static func parseAntigravityLatestHistory(_ url: URL) -> (workspace: String?, title: String?) {
-        guard let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else { return (nil, nil) }
+    private nonisolated static func parseAntigravityLatestHistory(_ url: URL) -> (conversationID: String?, workspace: String?, title: String?) {
+        var conversationID: String?
         var workspace: String?
         var title: String?
-        for line in text.split(separator: "\n").reversed() {
-            guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
-            if workspace == nil, let ws = json["workspace"] as? String, !ws.isEmpty {
-                let name = URL(fileURLWithPath: ws).lastPathComponent
-                workspace = name.isEmpty ? ws : name
+        if let data = try? Data(contentsOf: url),
+           let text = String(data: data, encoding: .utf8) {
+            for line in text.split(separator: "\n").reversed() {
+                guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+                if conversationID == nil, let cid = json["conversationId"] as? String, !cid.isEmpty {
+                    conversationID = cid
+                }
+                if workspace == nil, let ws = json["workspace"] as? String, !ws.isEmpty {
+                    let name = URL(fileURLWithPath: ws).lastPathComponent
+                    workspace = name.isEmpty ? ws : name
+                }
+                if title == nil,
+                   (json["type"] as? String) != "slash_command",
+                   let display = json["display"] as? String,
+                   !display.hasPrefix("/"),
+                   let cleaned = cleanSessionTitle(display) {
+                    title = cleaned
+                }
+                if conversationID != nil && workspace != nil && title != nil { break }
             }
-            if title == nil,
-               (json["type"] as? String) != "slash_command",
-               let display = json["display"] as? String,
-               !display.hasPrefix("/"),
-               let cleaned = cleanSessionTitle(display) {
-                title = cleaned
-            }
-            if workspace != nil && title != nil { break }
         }
-        return (workspace, title)
+        return (conversationID, workspace, title)
     }
 
     private nonisolated static func extractUserPromptAfterEnvironment(_ raw: String) -> String? {
@@ -2718,7 +2832,814 @@ final class AgentActivityTracker {
         }
     }
 
-    private nonisolated static func performRexLaunch(family: AgentFamily, cwdPath: String, customCommand: String) -> Bool {
+    private nonisolated static func buildResumeCommand(for item: AgentHistorySessionItem, baseCommand: String) -> String {
+        let trimmedBase = baseCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveBase = trimmedBase.isEmpty ? item.family.defaultLaunchCommand : trimmedBase
+        let sid = item.sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sid.isEmpty else { return effectiveBase }
+
+        switch item.family {
+        case .claude:
+            return "\(effectiveBase) --resume \(sid)"
+        case .codex:
+            return "\(effectiveBase) resume \(sid)"
+        case .copilot:
+            return "\(effectiveBase) --resume \(sid)"
+        case .antigravity:
+            return "\(effectiveBase) --conversation \(sid)"
+        }
+    }
+
+    private nonisolated static func performDeleteHistoricalSession(_ item: AgentHistorySessionItem) -> Bool {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let fm = FileManager.default
+        let sid = item.sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sid.isEmpty, !item.id.contains(":demo-hist-") else { return true }
+        guard item.onlineActivityID == nil else { return false }
+
+        switch item.family {
+        case .codex:
+            let codexDBURL = home.appendingPathComponent(".codex/state_5.sqlite")
+            var db: OpaquePointer?
+            if sqlite3_open_v2(codexDBURL.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+                defer { sqlite3_close(db) }
+                let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+                // 1. Query rollout_path and physically delete the rollout .jsonl file on disk
+                let selectSQL = "SELECT rollout_path FROM threads WHERE id = ?;"
+                var selectStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, selectSQL, -1, &selectStmt, nil) == SQLITE_OK {
+                    defer { sqlite3_finalize(selectStmt) }
+                    sqlite3_bind_text(selectStmt, 1, sid, -1, sqlTransient)
+                    while sqlite3_step(selectStmt) == SQLITE_ROW {
+                        if let cPath = sqlite3_column_text(selectStmt, 0) {
+                            let rolloutPath = String(cString: cPath)
+                            if !rolloutPath.isEmpty, fm.fileExists(atPath: rolloutPath) {
+                                try? fm.removeItem(atPath: rolloutPath)
+                            }
+                        }
+                    }
+                }
+
+                // 2. Physically delete row from threads table
+                let deleteSQL = "DELETE FROM threads WHERE id = ?;"
+                var deleteStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, deleteSQL, -1, &deleteStmt, nil) == SQLITE_OK {
+                    defer { sqlite3_finalize(deleteStmt) }
+                    sqlite3_bind_text(deleteStmt, 1, sid, -1, sqlTransient)
+                    _ = sqlite3_step(deleteStmt)
+                }
+            }
+
+            // 3. Fallback scan in ~/.codex/sessions and ~/.codex/archived_sessions for any rollout file matching sid
+            for subdir in [".codex/sessions", ".codex/archived_sessions"] {
+                let rootURL = home.appendingPathComponent(subdir)
+                if let enumerator = fm.enumerator(at: rootURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                    for case let fileURL as URL in enumerator {
+                        if fileURL.lastPathComponent.contains(sid) && fileURL.pathExtension == "jsonl" {
+                            try? fm.removeItem(at: fileURL)
+                        }
+                    }
+                }
+            }
+
+            // 4. Clean thread_id logs from ~/.codex/logs_2.sqlite
+            let logsDBURL = home.appendingPathComponent(".codex/logs_2.sqlite")
+            var logsDB: OpaquePointer?
+            if sqlite3_open_v2(logsDBURL.path, &logsDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+                defer { sqlite3_close(logsDB) }
+                let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                let delLogsSQL = "DELETE FROM logs WHERE thread_id = ?;"
+                var stmt: OpaquePointer?
+                if sqlite3_prepare_v2(logsDB, delLogsSQL, -1, &stmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(stmt, 1, sid, -1, sqlTransient)
+                    _ = sqlite3_step(stmt)
+                    sqlite3_finalize(stmt)
+                }
+            }
+
+            // 5. Remove from ~/.codex/session_index.jsonl and ~/.codex/history.jsonl
+            for jsonlRel in [".codex/session_index.jsonl", ".codex/history.jsonl"] {
+                let fileURL = home.appendingPathComponent(jsonlRel)
+                if let data = try? Data(contentsOf: fileURL),
+                   let text = String(data: data, encoding: .utf8) {
+                    let kept = text.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
+                        !line.contains("\"\(sid)\"")
+                    }
+                    try? kept.joined(separator: "\n").write(to: fileURL, atomically: true, encoding: .utf8)
+                }
+            }
+            return true
+
+        case .claude:
+            // 1. Remove index entries from ~/.claude/history.jsonl
+            let claudeHistoryURL = home.appendingPathComponent(".claude/history.jsonl")
+            if let data = try? Data(contentsOf: claudeHistoryURL),
+               let text = String(data: data, encoding: .utf8) {
+                let keptLines = text.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
+                    !line.contains("\"sessionId\":\"\(sid)\"") && !line.contains("\"sessionId\": \"\(sid)\"")
+                }
+                let updated = keptLines.joined(separator: "\n")
+                try? updated.write(to: claudeHistoryURL, atomically: true, encoding: .utf8)
+            }
+
+            // 2. Physically delete ~/.claude/projects/*/<sid>.jsonl and ~/.claude/projects/*/<sid> directory
+            let projectsRoot = home.appendingPathComponent(".claude/projects")
+            if let projectDirs = try? fm.contentsOfDirectory(at: projectsRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                for dir in projectDirs {
+                    let jsonlFile = dir.appendingPathComponent("\(sid).jsonl")
+                    if fm.fileExists(atPath: jsonlFile.path) {
+                        try? fm.removeItem(at: jsonlFile)
+                    }
+                    let sessionFolder = dir.appendingPathComponent(sid)
+                    if fm.fileExists(atPath: sessionFolder.path) {
+                        try? fm.removeItem(at: sessionFolder)
+                    }
+                }
+            }
+
+            // 3. Clean auxiliary session-env / todos / tasks if present
+            let sessionEnvDir = home.appendingPathComponent(".claude/session-env").appendingPathComponent(sid)
+            if fm.fileExists(atPath: sessionEnvDir.path) {
+                try? fm.removeItem(at: sessionEnvDir)
+            }
+            for auxSubdir in [".claude/todos", ".claude/tasks"] {
+                let auxURL = home.appendingPathComponent(auxSubdir)
+                if let items = try? fm.contentsOfDirectory(at: auxURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                    for itemURL in items where itemURL.lastPathComponent.contains(sid) {
+                        try? fm.removeItem(at: itemURL)
+                    }
+                }
+            }
+            return true
+
+        case .copilot:
+            // 1. Physically delete ~/.copilot/session-state/<sid> directory
+            let sessionDir = home.appendingPathComponent(".copilot/session-state").appendingPathComponent(sid)
+            if fm.fileExists(atPath: sessionDir.path) {
+                try? fm.removeItem(at: sessionDir)
+            }
+
+            // 2. Physically delete session records from ~/.copilot/session-store.db
+            let storeDBURL = home.appendingPathComponent(".copilot/session-store.db")
+            var db: OpaquePointer?
+            if sqlite3_open_v2(storeDBURL.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+                defer { sqlite3_close(db) }
+                let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                let deleteQueries = [
+                    "DELETE FROM turns WHERE session_id = ?;",
+                    "DELETE FROM checkpoints WHERE session_id = ?;",
+                    "DELETE FROM session_files WHERE session_id = ?;",
+                    "DELETE FROM session_refs WHERE session_id = ?;",
+                    "DELETE FROM forge_trajectory_events WHERE session_id = ?;",
+                    "DELETE FROM assistant_usage_events WHERE session_id = ?;",
+                    "DELETE FROM search_index WHERE session_id = ?;",
+                    "DELETE FROM sessions WHERE id = ?;",
+                ]
+                for query in deleteQueries {
+                    var stmt: OpaquePointer?
+                    if sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK {
+                        sqlite3_bind_text(stmt, 1, sid, -1, sqlTransient)
+                        _ = sqlite3_step(stmt)
+                        sqlite3_finalize(stmt)
+                    }
+                }
+            }
+
+            // 3. Clean from ~/.copilot/sidebar-sessions-state/*.json
+            let sidebarDir = home.appendingPathComponent(".copilot/sidebar-sessions-state")
+            if let sidebarFiles = try? fm.contentsOfDirectory(at: sidebarDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                for fileURL in sidebarFiles where fileURL.pathExtension == "json" {
+                    if let data = try? Data(contentsOf: fileURL),
+                       var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       var sids = json["sessionIds"] as? [String],
+                       sids.contains(sid) {
+                        sids.removeAll { $0 == sid }
+                        json["sessionIds"] = sids
+                        if let outData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys]) {
+                            try? outData.write(to: fileURL, options: .atomic)
+                        }
+                    }
+                }
+            }
+            return true
+
+        case .antigravity:
+            // 1. Remove from ~/.gemini/antigravity-cli/conversation_summaries.db
+            let summariesDBURL = home.appendingPathComponent(".gemini/antigravity-cli/conversation_summaries.db")
+            var sumDB: OpaquePointer?
+            if sqlite3_open_v2(summariesDBURL.path, &sumDB, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+                defer { sqlite3_close(sumDB) }
+                let sqlTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+                let delSQL = "DELETE FROM conversation_summaries WHERE conversation_id = ?;"
+                var stmt: OpaquePointer?
+                if sqlite3_prepare_v2(sumDB, delSQL, -1, &stmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(stmt, 1, sid, -1, sqlTransient)
+                    _ = sqlite3_step(stmt)
+                    sqlite3_finalize(stmt)
+                }
+            }
+
+            // 2. Remove from ~/.gemini/antigravity-cli/history.jsonl
+            let agyHistoryURL = home.appendingPathComponent(".gemini/antigravity-cli/history.jsonl")
+            if let data = try? Data(contentsOf: agyHistoryURL),
+               let text = String(data: data, encoding: .utf8) {
+                let keptLines = text.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
+                    !line.contains("\"conversationId\":\"\(sid)\"") && !line.contains("\"conversationId\": \"\(sid)\"")
+                }
+                let updated = keptLines.joined(separator: "\n")
+                try? updated.write(to: agyHistoryURL, atomically: true, encoding: .utf8)
+            }
+
+            // 3. Physically delete ~/.gemini/antigravity-cli/conversations/<sid>.db*, brain/<sid>, and presence/<sid>.lock
+            let convDir = home.appendingPathComponent(".gemini/antigravity-cli/conversations")
+            for suffix in [".db", ".db-wal", ".db-shm"] {
+                let dbFile = convDir.appendingPathComponent("\(sid)\(suffix)")
+                if fm.fileExists(atPath: dbFile.path) {
+                    try? fm.removeItem(at: dbFile)
+                }
+            }
+            let brainDir = home.appendingPathComponent(".gemini/antigravity-cli/brain").appendingPathComponent(sid)
+            if fm.fileExists(atPath: brainDir.path) {
+                try? fm.removeItem(at: brainDir)
+            }
+            let presenceLock = home.appendingPathComponent(".gemini/antigravity-cli/presence").appendingPathComponent("\(sid).lock")
+            if fm.fileExists(atPath: presenceLock.path) {
+                try? fm.removeItem(at: presenceLock)
+            }
+            return true
+        }
+    }
+
+    private nonisolated static func collectHistoricalSessions(liveItems: [AgentActivityItem]) -> [AgentHistorySessionItem] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let deletedKeys = loadDeletedHistoryKeys()
+        var onlineBySessionID: [String: String] = [:]
+        for live in liveItems {
+            if let sid = live.sessionID, !sid.isEmpty {
+                onlineBySessionID[sid] = live.id
+            }
+        }
+
+        var results: [AgentHistorySessionItem] = []
+        var staleDeletedOnDisk: [AgentHistorySessionItem] = []
+        var seenKeys = Set<String>()
+
+        func addEntry(_ entry: AgentHistorySessionItem) {
+            let key = "\(entry.family.rawValue):\(entry.sessionID)"
+            guard !entry.sessionID.isEmpty, !seenKeys.contains(key) else { return }
+            seenKeys.insert(key)
+            if deletedKeys.contains(entry.id) || deletedKeys.contains(key) || deletedKeys.contains(entry.sessionID) {
+                if entry.onlineActivityID == nil {
+                    staleDeletedOnDisk.append(entry)
+                }
+                return
+            }
+            results.append(entry)
+        }
+
+        func openSQLiteForReading(_ url: URL) -> OpaquePointer? {
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            var handle: OpaquePointer?
+            if sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+                return handle
+            }
+            if let handle { sqlite3_close(handle) }
+            handle = nil
+            if sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+                return handle
+            }
+            if let handle { sqlite3_close(handle) }
+            return nil
+        }
+
+        // 1. Codex CLI History from ~/.codex/state_5.sqlite & ~/.codex/sessions
+        let en = AppLanguage.current == .english
+        let codexDBURL = home.appendingPathComponent(".codex/state_5.sqlite")
+        let codexTitles = loadCodexTitles(home: home)
+        if let db = openSQLiteForReading(codexDBURL) {
+            defer { sqlite3_close(db) }
+            let sql = """
+            SELECT id, cwd, COALESCE(NULLIF(name, ''), NULLIF(title, ''), first_user_message), updated_at, git_branch
+            FROM threads
+            WHERE archived = 0
+            ORDER BY updated_at DESC
+            LIMIT 500;
+            """
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(stmt) }
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let sid = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+                    let cwd = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+                    let rawTitle = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
+                    let updatedSec = sqlite3_column_int64(stmt, 3)
+                    let branch = sqlite3_column_text(stmt, 4).map { String(cString: $0) }
+
+                    guard !sid.isEmpty else { continue }
+                    let wsName = URL(fileURLWithPath: cwd).lastPathComponent
+                    let workspace = wsName.isEmpty || wsName == "/" ? "Codex" : wsName
+                    let shortID = String(sid.prefix(8))
+                    let unnamedFallback = en ? "Untitled Session (\(shortID))" : "未命名会话 (\(shortID))"
+                    let title = codexTitles.bySessionID[sid]
+                        ?? extractUserPromptAfterEnvironment(rawTitle ?? "")
+                        ?? cleanSessionTitle(rawTitle)
+                        ?? unnamedFallback
+                    let updatedAt = updatedSec > 1_000_000_000_000
+                        ? Date(timeIntervalSince1970: Double(updatedSec) / 1000.0)
+                        : Date(timeIntervalSince1970: Double(max(1, updatedSec)))
+
+                    addEntry(
+                        AgentHistorySessionItem(
+                            id: "codex:\(sid)",
+                            sessionID: sid,
+                            family: .codex,
+                            title: title,
+                            workspace: workspace,
+                            cwdPath: cwd.isEmpty ? home.path : cwd,
+                            gitBranch: (branch?.isEmpty == false) ? branch : nil,
+                            updatedAt: updatedAt,
+                            onlineActivityID: onlineBySessionID[sid]
+                        )
+                    )
+                }
+            }
+        }
+
+        // Fallback scan for any Codex rollout files on disk not yet in state_5.sqlite
+        let codexSessionsRoot = home.appendingPathComponent(".codex/sessions")
+        if let enumerator = FileManager.default.enumerator(
+            at: codexSessionsRoot,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for case let fileURL as URL in enumerator where fileURL.pathExtension == "jsonl" && fileURL.lastPathComponent.hasPrefix("rollout-") {
+                let modDate = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+                if let info = parseCodexRolloutFile(fileURL, modDate: modDate), !info.sessionID.isEmpty {
+                    let wsName = URL(fileURLWithPath: info.cwdPath).lastPathComponent
+                    let workspace = wsName.isEmpty || wsName == "/" ? "Codex" : wsName
+                    let shortID = String(info.sessionID.prefix(8))
+                    let unnamedFallback = en ? "Untitled Session (\(shortID))" : "未命名会话 (\(shortID))"
+                    let title = codexTitles.bySessionID[info.sessionID]
+                        ?? info.fallbackTitle
+                        ?? unnamedFallback
+                    addEntry(
+                        AgentHistorySessionItem(
+                            id: "codex:\(info.sessionID)",
+                            sessionID: info.sessionID,
+                            family: .codex,
+                            title: title,
+                            workspace: workspace,
+                            cwdPath: info.cwdPath.isEmpty ? home.path : info.cwdPath,
+                            gitBranch: nil,
+                            updatedAt: info.updatedAt,
+                            onlineActivityID: onlineBySessionID[info.sessionID]
+                        )
+                    )
+                }
+            }
+        }
+
+        // 2. Claude Code History from ~/.claude/history.jsonl AND ~/.claude/projects/*/*.jsonl
+        struct ClaudeHistAcc {
+            var sessionID: String
+            var cwdPath: String
+            var gitBranch: String?
+            var latestPrompt: String?
+            var aiTitle: String?
+            var updatedDate: Date
+        }
+        var claudeBySid: [String: ClaudeHistAcc] = [:]
+
+        let claudeHistoryURL = home.appendingPathComponent(".claude/history.jsonl")
+        if let data = try? Data(contentsOf: claudeHistoryURL),
+           let text = String(data: data, encoding: .utf8) {
+            for line in text.split(separator: "\n") {
+                guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                      let sid = json["sessionId"] as? String, !sid.isEmpty else { continue }
+                let project = (json["project"] as? String) ?? home.path
+                let ts = (json["timestamp"] as? Double) ?? 0
+                let date = ts > 0 ? Date(timeIntervalSince1970: ts / 1000.0) : Date.distantPast
+                let display = json["display"] as? String
+                let cleanedPrompt: String? = {
+                    guard let display, !display.hasPrefix("/") else { return nil }
+                    return cleanSessionTitle(display)
+                }()
+
+                if var existing = claudeBySid[sid] {
+                    if date >= existing.updatedDate {
+                        existing.updatedDate = date
+                        if !project.isEmpty { existing.cwdPath = project }
+                    }
+                    if let cleanedPrompt {
+                        existing.latestPrompt = cleanedPrompt
+                    }
+                    claudeBySid[sid] = existing
+                } else {
+                    claudeBySid[sid] = ClaudeHistAcc(
+                        sessionID: sid,
+                        cwdPath: project,
+                        gitBranch: nil,
+                        latestPrompt: cleanedPrompt,
+                        aiTitle: nil,
+                        updatedDate: date
+                    )
+                }
+            }
+        }
+
+        // Scan all ~/.claude/projects/*/*.jsonl files to capture sessions not in history.jsonl and enrich metadata
+        let claudeProjectsRoot = home.appendingPathComponent(".claude/projects")
+        if let projectDirs = try? FileManager.default.contentsOfDirectory(at: claudeProjectsRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+            for dir in projectDirs {
+                guard let files = try? FileManager.default.contentsOfDirectory(
+                    at: dir,
+                    includingPropertiesForKeys: [.contentModificationDateKey],
+                    options: [.skipsHiddenFiles]
+                ) else { continue }
+                for fileURL in files where fileURL.pathExtension == "jsonl" {
+                    let sid = fileURL.deletingPathExtension().lastPathComponent
+                    guard !sid.isEmpty else { continue }
+                    let modDate = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+
+                    var fileCwd: String?
+                    var fileBranch: String?
+                    var fileAiTitle: String?
+                    var fileLastPrompt: String?
+                    var fileUserMsg: String?
+
+                    if let handle = try? FileHandle(forReadingFrom: fileURL) {
+                        defer { try? handle.close() }
+                        let headData = (try? handle.read(upToCount: 16384)) ?? Data()
+                        if let headText = String(data: headData, encoding: .utf8) {
+                            for line in headText.split(separator: "\n") {
+                                guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+                                if fileCwd == nil, let cwd = json["cwd"] as? String, !cwd.isEmpty {
+                                    fileCwd = cwd
+                                }
+                                if fileBranch == nil, let br = json["gitBranch"] as? String, !br.isEmpty, br != "HEAD" {
+                                    fileBranch = br
+                                }
+                                if fileUserMsg == nil, (json["type"] as? String) == "user",
+                                   let msg = json["message"] as? [String: Any] {
+                                    if let contentStr = msg["content"] as? String, !contentStr.hasPrefix("/") {
+                                        fileUserMsg = cleanSessionTitle(contentStr)
+                                    } else if let parts = msg["content"] as? [[String: Any]] {
+                                        for part in parts where (part["type"] as? String) == "text" {
+                                            if let txt = part["text"] as? String, !txt.hasPrefix("<"), !txt.hasPrefix("/"),
+                                               let cleaned = cleanSessionTitle(txt) {
+                                                fileUserMsg = cleaned
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        let totalSize = (try? handle.seekToEnd()) ?? 0
+                        let tailOffset = totalSize > 32768 ? totalSize - 32768 : 0
+                        try? handle.seek(toOffset: tailOffset)
+                        let tailData = (try? handle.readToEnd()) ?? Data()
+                        if let tailText = String(data: tailData, encoding: .utf8) {
+                            for line in tailText.split(separator: "\n") {
+                                if line.contains("\"ai-title\""),
+                                   let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                                   let raw = cleanSessionTitle(json["aiTitle"] as? String) {
+                                    fileAiTitle = raw
+                                } else if line.contains("\"last-prompt\""),
+                                          let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                                          let raw = json["lastPrompt"] as? String,
+                                          !raw.hasPrefix("/"),
+                                          let cleaned = cleanSessionTitle(raw) {
+                                    fileLastPrompt = cleaned
+                                }
+                            }
+                        }
+                    }
+
+                    if var existing = claudeBySid[sid] {
+                        if modDate > existing.updatedDate {
+                            existing.updatedDate = modDate
+                        }
+                        if existing.cwdPath.isEmpty, let fileCwd {
+                            existing.cwdPath = fileCwd
+                        }
+                        if existing.gitBranch == nil {
+                            existing.gitBranch = fileBranch
+                        }
+                        if let fileAiTitle {
+                            existing.aiTitle = fileAiTitle
+                        }
+                        if existing.latestPrompt == nil {
+                            existing.latestPrompt = fileLastPrompt ?? fileUserMsg
+                        }
+                        claudeBySid[sid] = existing
+                    } else {
+                        claudeBySid[sid] = ClaudeHistAcc(
+                            sessionID: sid,
+                            cwdPath: fileCwd ?? home.path,
+                            gitBranch: fileBranch,
+                            latestPrompt: fileLastPrompt ?? fileUserMsg,
+                            aiTitle: fileAiTitle,
+                            updatedDate: modDate
+                        )
+                    }
+                }
+            }
+        }
+
+        for item in claudeBySid.values.sorted(by: { $0.updatedDate > $1.updatedDate }) {
+            let wsName = URL(fileURLWithPath: item.cwdPath).lastPathComponent
+            let workspace = wsName.isEmpty || wsName == "/" ? "Claude" : wsName
+            let shortID = String(item.sessionID.prefix(8))
+            let unnamedFallback = en ? "Untitled Session (\(shortID))" : "未命名会话 (\(shortID))"
+            let resolvedTitle = item.aiTitle
+                ?? item.latestPrompt
+                ?? unnamedFallback
+
+            addEntry(
+                AgentHistorySessionItem(
+                    id: "claude:\(item.sessionID)",
+                    sessionID: item.sessionID,
+                    family: .claude,
+                    title: resolvedTitle,
+                    workspace: workspace,
+                    cwdPath: item.cwdPath,
+                    gitBranch: item.gitBranch,
+                    updatedAt: item.updatedDate,
+                    onlineActivityID: onlineBySessionID[item.sessionID]
+                )
+            )
+        }
+
+        // 3. Copilot CLI History from ~/.copilot/session-store.db & ~/.copilot/session-state
+        let isoFormatterFractional = ISO8601DateFormatter()
+        isoFormatterFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoFormatterPlain = ISO8601DateFormatter()
+        isoFormatterPlain.formatOptions = [.withInternetDateTime]
+
+        func parseISO8601Date(_ raw: String?) -> Date? {
+            guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+            let normalized = raw.replacingOccurrences(of: " ", with: "T")
+            return isoFormatterFractional.date(from: normalized) ?? isoFormatterPlain.date(from: normalized)
+        }
+
+        let copilotStoreURL = home.appendingPathComponent(".copilot/session-store.db")
+        if let copilotDB = openSQLiteForReading(copilotStoreURL) {
+            defer { sqlite3_close(copilotDB) }
+            let sql = """
+            SELECT
+                s.id,
+                s.cwd,
+                s.branch,
+                s.summary,
+                (SELECT t.user_message FROM turns t WHERE t.session_id = s.id ORDER BY t.turn_index DESC LIMIT 1),
+                s.updated_at
+            FROM sessions s
+            ORDER BY s.updated_at DESC
+            LIMIT 500;
+            """
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(copilotDB, sql, -1, &stmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(stmt) }
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let sid = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+                    guard !sid.isEmpty, !sid.hasPrefix("pending-session:") else { continue }
+                    let cwdRaw = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+                    let branch = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
+                    let summaryRaw = sqlite3_column_text(stmt, 3).map { String(cString: $0) }
+                    let turnMsgRaw = sqlite3_column_text(stmt, 4).map { String(cString: $0) }
+                    let updatedStr = sqlite3_column_text(stmt, 5).map { String(cString: $0) }
+
+                    let workspaceURL = home.appendingPathComponent(".copilot/session-state").appendingPathComponent(sid).appendingPathComponent("workspace.yaml")
+                    let yamlTitle = cleanSessionTitle(parseSimpleYAMLValue(at: workspaceURL, key: "name"))
+                    let cwdPath = !cwdRaw.isEmpty ? cwdRaw : (parseSimpleYAMLValue(at: workspaceURL, key: "cwd") ?? home.path)
+                    let wsName = URL(fileURLWithPath: cwdPath).lastPathComponent
+                    let workspace = wsName.isEmpty || wsName == "/" ? "Copilot" : wsName
+
+                    let shortID = String(sid.prefix(8))
+                    let unnamedFallback = en ? "Untitled Session (\(shortID))" : "未命名会话 (\(shortID))"
+                    let title = yamlTitle
+                        ?? cleanSessionTitle(summaryRaw)
+                        ?? cleanSessionTitle(turnMsgRaw)
+                        ?? unnamedFallback
+
+                    let updatedAt = parseISO8601Date(updatedStr) ?? Date()
+
+                    addEntry(
+                        AgentHistorySessionItem(
+                            id: "copilot:\(sid)",
+                            sessionID: sid,
+                            family: .copilot,
+                            title: title,
+                            workspace: workspace,
+                            cwdPath: cwdPath,
+                            gitBranch: (branch?.isEmpty == false) ? branch : nil,
+                            updatedAt: updatedAt,
+                            onlineActivityID: onlineBySessionID[sid]
+                        )
+                    )
+                }
+            }
+        }
+
+        let copilotRoot = home.appendingPathComponent(".copilot/session-state")
+        if let dirs = try? FileManager.default.contentsOfDirectory(
+            at: copilotRoot,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            let sortedDirs = dirs.compactMap { url -> (URL, Date)? in
+                let name = url.lastPathComponent
+                guard !name.hasPrefix("pending-session:"),
+                      (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { return nil }
+                let eventsURL = url.appendingPathComponent("events.jsonl")
+                let workspaceURL = url.appendingPathComponent("workspace.yaml")
+                if let vals = try? eventsURL.resourceValues(forKeys: [.contentModificationDateKey]),
+                   let mod = vals.contentModificationDate {
+                    return (url, mod)
+                }
+                if let updatedStr = parseSimpleYAMLValue(at: workspaceURL, key: "updated_at"),
+                   let parsedDate = parseISO8601Date(updatedStr) {
+                    return (url, parsedDate)
+                }
+                if let vals = try? workspaceURL.resourceValues(forKeys: [.contentModificationDateKey]),
+                   let mod = vals.contentModificationDate {
+                    return (url, mod)
+                }
+                return nil
+            }.sorted { $0.1 > $1.1 }
+
+            for (dirURL, modDate) in sortedDirs {
+                let sid = dirURL.lastPathComponent
+                let workspaceURL = dirURL.appendingPathComponent("workspace.yaml")
+                let eventsURL = dirURL.appendingPathComponent("events.jsonl")
+                let cwdPath = parseSimpleYAMLValue(at: workspaceURL, key: "cwd") ?? home.path
+                let yamlTitle = cleanSessionTitle(parseSimpleYAMLValue(at: workspaceURL, key: "name"))
+                let tail = parseCopilotEventsTail(eventsURL)
+                let wsName = URL(fileURLWithPath: cwdPath).lastPathComponent
+                let workspace = wsName.isEmpty || wsName == "/" ? "Copilot" : wsName
+                let shortID = String(sid.prefix(8))
+                let unnamedFallback = en ? "Untitled Session (\(shortID))" : "未命名会话 (\(shortID))"
+                let title = yamlTitle ?? tail.lastUserMessage ?? unnamedFallback
+
+                addEntry(
+                    AgentHistorySessionItem(
+                        id: "copilot:\(sid)",
+                        sessionID: sid,
+                        family: .copilot,
+                        title: title,
+                        workspace: workspace,
+                        cwdPath: cwdPath,
+                        gitBranch: nil,
+                        updatedAt: modDate,
+                        onlineActivityID: onlineBySessionID[sid]
+                    )
+                )
+            }
+        }
+
+        // 4. Antigravity CLI History from ~/.gemini/antigravity-cli/conversation_summaries.db, conversations/*.db & history.jsonl
+        struct AgyHistAcc {
+            var conversationID: String
+            var cwdPath: String
+            var title: String?
+            var updatedDate: Date
+        }
+        var agyByCid: [String: AgyHistAcc] = [:]
+
+        let agySummariesURL = home.appendingPathComponent(".gemini/antigravity-cli/conversation_summaries.db")
+        if let agyDB = openSQLiteForReading(agySummariesURL) {
+            defer { sqlite3_close(agyDB) }
+            let sql = """
+            SELECT conversation_id, title, preview, workspace_uris, last_modified_time
+            FROM conversation_summaries
+            WHERE killed = 0
+            ORDER BY last_modified_time DESC
+            LIMIT 300;
+            """
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(agyDB, sql, -1, &stmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(stmt) }
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let cid = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+                    guard !cid.isEmpty else { continue }
+                    let rawTitle = sqlite3_column_text(stmt, 1).map { String(cString: $0) }
+                    let rawPreview = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
+                    let rawUris = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
+                    let rawTime = sqlite3_column_text(stmt, 4).map { String(cString: $0) }
+
+                    var parsedCwd = home.path
+                    if let data = rawUris.data(using: .utf8),
+                       let arr = try? JSONSerialization.jsonObject(with: data) as? [String],
+                       let firstUri = arr.first,
+                       let url = URL(string: firstUri), url.isFileURL {
+                        parsedCwd = url.path
+                    }
+
+                    let title = cleanSessionTitle(rawTitle) ?? cleanSessionTitle(rawPreview)
+                    let updatedDate = parseISO8601Date(rawTime) ?? Date()
+                    agyByCid[cid] = AgyHistAcc(
+                        conversationID: cid,
+                        cwdPath: parsedCwd,
+                        title: title,
+                        updatedDate: updatedDate
+                    )
+                }
+            }
+        }
+
+        let agyHistoryURL = home.appendingPathComponent(".gemini/antigravity-cli/history.jsonl")
+        if let data = try? Data(contentsOf: agyHistoryURL),
+           let text = String(data: data, encoding: .utf8) {
+            for line in text.split(separator: "\n") {
+                guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                      let cid = json["conversationId"] as? String, !cid.isEmpty else { continue }
+                let ws = (json["workspace"] as? String) ?? home.path
+                let ts = (json["timestamp"] as? Double) ?? 0
+                let date = ts > 0 ? Date(timeIntervalSince1970: ts / 1000.0) : Date()
+                let isSlash = (json["type"] as? String) == "slash_command"
+                let display = json["display"] as? String
+                let promptTitle: String? = (!isSlash && display?.hasPrefix("/") == false) ? cleanSessionTitle(display) : nil
+
+                if var existing = agyByCid[cid] {
+                    if date > existing.updatedDate {
+                        existing.updatedDate = date
+                    }
+                    if !ws.isEmpty {
+                        existing.cwdPath = ws
+                    }
+                    if existing.title == nil, let promptTitle {
+                        existing.title = promptTitle
+                    }
+                    agyByCid[cid] = existing
+                } else {
+                    agyByCid[cid] = AgyHistAcc(
+                        conversationID: cid,
+                        cwdPath: ws,
+                        title: promptTitle,
+                        updatedDate: date
+                    )
+                }
+            }
+        }
+
+        let agyConvDir = home.appendingPathComponent(".gemini/antigravity-cli/conversations")
+        if let dbFiles = try? FileManager.default.contentsOfDirectory(
+            at: agyConvDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for fileURL in dbFiles where fileURL.pathExtension == "db" {
+                let cid = fileURL.deletingPathExtension().lastPathComponent
+                guard !cid.isEmpty, agyByCid[cid] == nil else { continue }
+                let modDate = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
+                agyByCid[cid] = AgyHistAcc(
+                    conversationID: cid,
+                    cwdPath: home.path,
+                    title: nil,
+                    updatedDate: modDate
+                )
+            }
+        }
+
+        for item in agyByCid.values.sorted(by: { $0.updatedDate > $1.updatedDate }) {
+            let shortID = String(item.conversationID.prefix(8))
+            let unnamedFallback = en ? "Untitled Session (\(shortID))" : "未命名会话 (\(shortID))"
+            let title = item.title ?? unnamedFallback
+            let wsName = URL(fileURLWithPath: item.cwdPath).lastPathComponent
+            let workspace = wsName.isEmpty || wsName == "/" ? "Antigravity" : wsName
+
+            addEntry(
+                AgentHistorySessionItem(
+                    id: "antigravity:\(item.conversationID)",
+                    sessionID: item.conversationID,
+                    family: .antigravity,
+                    title: title,
+                    workspace: workspace,
+                    cwdPath: item.cwdPath,
+                    gitBranch: nil,
+                    updatedAt: item.updatedDate,
+                    onlineActivityID: onlineBySessionID[item.conversationID]
+                )
+            )
+        }
+
+        for staleItem in staleDeletedOnDisk {
+            _ = performDeleteHistoricalSession(staleItem)
+        }
+
+        results.sort { $0.updatedAt > $1.updatedAt }
+        return results
+    }
+
+    private nonisolated static func performRexLaunch(
+        family: AgentFamily,
+        cwdPath: String,
+        customCommand: String,
+        preferredTabTitle: String? = nil
+    ) -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
         guard let rexBin = resolveRexBinary(home: home) else { return false }
         ensureRexRemoteControlEnabled()
@@ -2727,10 +3648,24 @@ final class AgentActivityTracker {
         let resolvedCwd: String = {
             let trimmed = cwdPath.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { return home.path }
-            return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+            let candidate = URL(fileURLWithPath: trimmed).standardizedFileURL.path
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir), isDir.boolValue {
+                return candidate
+            }
+            return home.path
         }()
         let dirName = URL(fileURLWithPath: resolvedCwd).lastPathComponent
-        let tabLabel = dirName.isEmpty || dirName == "/" ? family.shortName : "\(family.shortName) · \(dirName)"
+        let tabLabel: String = {
+            if let preferredTabTitle = preferredTabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !preferredTabTitle.isEmpty {
+                let shortTitle = preferredTabTitle.count > 26
+                    ? String(preferredTabTitle.prefix(26)) + "…"
+                    : preferredTabTitle
+                return "\(family.shortName) · \(shortTitle)"
+            }
+            return dirName.isEmpty || dirName == "/" ? family.shortName : "\(family.shortName) · \(dirName)"
+        }()
         let trimmedCmd = customCommand.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveCmd = trimmedCmd.isEmpty ? family.defaultLaunchCommand : trimmedCmd
         let cmdLine = "\(effectiveCmd)\n"

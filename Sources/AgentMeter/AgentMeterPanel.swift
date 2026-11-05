@@ -20,11 +20,31 @@ private enum AgentListFilter: String, CaseIterable, Identifiable {
     }
 }
 
+private enum QuickLaunchMode: String, CaseIterable, Identifiable {
+    case newSession
+    case history
+
+    var id: String { rawValue }
+
+    func title(in language: AppLanguage) -> String {
+        switch (self, language) {
+        case (.newSession, .english): "New"
+        case (.newSession, .chinese): "新建会话"
+        case (.history, .english): "History"
+        case (.history, .chinese): "历史记录"
+        }
+    }
+}
+
 struct AgentMeterPanel: View {
     @Bindable var model: AgentMeterModel
     @State private var showingSettings = false
     @State private var showingQuickLaunch = false
+    @State private var quickLaunchMode: QuickLaunchMode = .newSession
     @State private var selectedFilter: AgentListFilter = .all
+    @State private var historySearchQuery: String = ""
+    @State private var selectedHistoryFamily: AgentFamily? = nil
+    @State private var isHistorySearchFocused = false
     @State private var hoveredAgentID: String?
     @State private var hoveredCloseID: String?
     @State private var hoveredApprovePrimaryID: String?
@@ -35,6 +55,11 @@ struct AgentMeterPanel: View {
     @State private var hoveredQuickCompactID: String?
     @State private var hoveredQuickSendID: String?
     @State private var hoveredWorkspacePath: String?
+    @State private var hoveredHistoryID: String?
+    @State private var hoveredHistoryDeleteID: String?
+    @State private var hoveredHistoryConfirmDeleteID: String?
+    @State private var hoveredHistoryCancelDeleteID: String?
+    @State private var confirmingHistoryDeleteID: String?
     @State private var replyDrafts: [String: String] = [:]
     @State private var expandedReplyAgentID: String?
     @State private var focusedReplyAgentID: String?
@@ -42,6 +67,8 @@ struct AgentMeterPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var filterNamespace
     @Namespace private var launchFamilyNamespace
+    @Namespace private var quickLaunchModeNamespace
+    @Namespace private var historyFamilyFilterNamespace
 
     private var filteredActivities: [AgentActivityItem] {
         switch selectedFilter {
@@ -121,7 +148,7 @@ struct AgentMeterPanel: View {
                             .shadow(color: .black.opacity(dark ? 0.18 : 0.04), radius: 4, x: 0, y: 1.5)
                     )
             } else if showingQuickLaunch {
-                Image(systemName: "plus.rectangle.on.rectangle")
+                Image(systemName: quickLaunchMode == .newSession ? "plus.rectangle.on.rectangle" : "clock.arrow.circlepath")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(model.preferredLaunchFamily.accentColor(dark: dark))
                     .frame(width: 34, height: 34)
@@ -139,8 +166,7 @@ struct AgentMeterPanel: View {
                 Text(en ? "Settings" : "设置")
                     .font(.system(size: 16, weight: .semibold))
             } else if showingQuickLaunch {
-                Text(en ? "New Agent Session" : "新建 Agent 会话")
-                    .font(.system(size: 16, weight: .semibold))
+                quickLaunchModeSegmentedControl(dark: dark)
             } else {
                 HStack(spacing: 7) {
                     Text("Agent Meter")
@@ -194,12 +220,22 @@ struct AgentMeterPanel: View {
                     withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
                         showingSettings = false
                         showingQuickLaunch = false
+                        isHistorySearchFocused = false
                     }
                 }
             } else {
                 HStack(spacing: 8) {
                     FlatIconButton(icon: "plus", iconSize: 13.5, tooltip: en ? "New Agent Session" : "快速新建 Agent 会话") {
+                        quickLaunchMode = .newSession
                         model.refreshLaunchWorkspaces()
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
+                            showingQuickLaunch = true
+                        }
+                    }
+
+                    FlatIconButton(icon: "clock.arrow.circlepath", iconSize: 13, tooltip: en ? "Resume History Session" : "恢复历史 Agent 会话") {
+                        quickLaunchMode = .history
+                        model.refreshHistoricalSessions()
                         withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
                             showingQuickLaunch = true
                         }
@@ -212,6 +248,72 @@ struct AgentMeterPanel: View {
                     }
                 }
             }
+        }
+    }
+
+    private func quickLaunchModeSegmentedControl(dark: Bool) -> some View {
+        HStack(spacing: 2) {
+            ForEach(QuickLaunchMode.allCases) { mode in
+                quickLaunchModePill(mode: mode, dark: dark)
+            }
+        }
+        .padding(3)
+        .background(
+            Capsule()
+                .fill(FlatPalette.trackBackground(dark: dark))
+                .overlay(
+                    Capsule()
+                        .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
+                )
+        )
+    }
+
+    private func quickLaunchModePill(mode: QuickLaunchMode, dark: Bool) -> some View {
+        let isSelected = quickLaunchMode == mode
+        let count = mode == .history ? model.historicalSessions.count : 0
+        return HStack(spacing: 4) {
+            Text(mode.title(in: model.language))
+                .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium))
+            if count > 0 {
+                Text("\(count)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .opacity(isSelected ? 0.88 : 0.6)
+            }
+        }
+        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 4.5)
+        .background {
+            if isSelected {
+                Capsule()
+                    .fill(FlatPalette.selectedPillBackground(dark: dark))
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(color: .black.opacity(dark ? 0.28 : 0.08), radius: 2, x: 0, y: 1)
+                    .matchedGeometryEffect(id: "quickLaunchModePill", in: quickLaunchModeNamespace)
+            }
+        }
+        .contentShape(Capsule())
+        .overlay {
+            PointingHandCursorOverlay(
+                onClick: {
+                    if mode == .history {
+                        model.refreshHistoricalSessions()
+                    } else {
+                        isHistorySearchFocused = false
+                        model.refreshLaunchWorkspaces()
+                    }
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
+                        quickLaunchMode = mode
+                    }
+                }
+            )
         }
     }
 
@@ -1362,7 +1464,11 @@ struct AgentMeterPanel: View {
             return en ? "\(mins)m ago" : "\(mins)m前"
         }
         let hours = mins / 60
-        return en ? "\(hours)h ago" : "\(hours)h前"
+        if hours < 24 {
+            return en ? "\(hours)h ago" : "\(hours)h前"
+        }
+        let days = hours / 24
+        return en ? "\(days)d ago" : "\(days)天前"
     }
 
     private func footer(dark: Bool) -> some View {
@@ -1383,9 +1489,508 @@ struct AgentMeterPanel: View {
         }
     }
 
-    // MARK: - Quick Launch Section
+    // MARK: - Quick Launch & History Resume Section
 
+    @ViewBuilder
     private func quickLaunchSection(dark: Bool) -> some View {
+        if quickLaunchMode == .history {
+            TimelineView(.periodic(from: .now, by: 30.0)) { context in
+                historySessionSection(dark: dark, now: context.date)
+            }
+            .transition(.opacity)
+        } else {
+            newSessionLaunchSection(dark: dark)
+                .transition(.opacity)
+        }
+    }
+
+    private var filteredHistoricalSessions: [AgentHistorySessionItem] {
+        let query = historySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return model.historicalSessions.filter { item in
+            if let selectedHistoryFamily, item.family != selectedHistoryFamily {
+                return false
+            }
+            guard !query.isEmpty else { return true }
+            return item.title.lowercased().contains(query)
+                || item.workspace.lowercased().contains(query)
+                || item.cwdPath.lowercased().contains(query)
+                || item.family.rawValue.lowercased().contains(query)
+                || (item.gitBranch?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    private func historySessionSection(dark: Bool, now: Date) -> some View {
+        let en = model.language == .english
+        let items = filteredHistoricalSessions
+        let hasSearchText = !historySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        return VStack(alignment: .leading, spacing: 11) {
+            // 1. Search Bar
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(isHistorySearchFocused ? FlatPalette.blue : .secondary)
+
+                InlinePromptTextField(
+                    text: $historySearchQuery,
+                    placeholder: en ? "Search session title, prompt, or project…" : "搜索历史标题、提示词或项目名…",
+                    dark: dark,
+                    requestFocus: isHistorySearchFocused,
+                    onFocusChange: { focused in
+                        isHistorySearchFocused = focused
+                    }
+                )
+                .frame(maxWidth: .infinity)
+                .frame(height: 20)
+
+                if hasSearchText {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                        .overlay {
+                            PointingHandCursorOverlay(
+                                onClick: {
+                                    historySearchQuery = ""
+                                }
+                            )
+                        }
+                }
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(FlatPalette.cardBackground(dark: dark))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(
+                                isHistorySearchFocused
+                                    ? FlatPalette.blue.opacity(dark ? 0.55 : 0.45)
+                                    : FlatPalette.hairlineBorder(dark: dark),
+                                lineWidth: 1
+                            )
+                    )
+            )
+
+            // 2. Agent Family Filter Pills
+            historyFamilyFilterBar(dark: dark)
+
+            // 3. Historical Sessions List
+            if items.isEmpty {
+                emptyStateCard(
+                    icon: "clock.arrow.circlepath",
+                    title: hasSearchText
+                        ? (en ? "No matching historical sessions" : "没有找到匹配的历史会话")
+                        : (en ? "No historical sessions found" : "暂未发现本地历史会话记录"),
+                    subtitle: en
+                        ? "Supports resuming Claude Code, Codex CLI, Copilot CLI & Antigravity conversations in Rex"
+                        : "自动扫描本机 Claude Code、Codex CLI、Copilot CLI 与 Antigravity 的历史会话记录"
+                )
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(items) { item in
+                        historySessionRow(item: item, dark: dark, now: now)
+                    }
+                }
+            }
+        }
+    }
+
+    private func historyFamilyFilterBar(dark: Bool) -> some View {
+        let en = model.language == .english
+        return HStack(spacing: 4) {
+            historyFamilyFilterPill(
+                family: nil,
+                label: en ? "All" : "全部",
+                count: model.historicalSessions.count,
+                dark: dark
+            )
+            ForEach(AgentFamily.allCases) { family in
+                let count = model.historicalSessions.filter { $0.family == family }.count
+                if count > 0 {
+                    historyFamilyFilterPill(
+                        family: family,
+                        label: family.shortName,
+                        count: count,
+                        dark: dark
+                    )
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func historyFamilyFilterPill(
+        family: AgentFamily?,
+        label: String,
+        count: Int,
+        dark: Bool
+    ) -> some View {
+        let isSelected = selectedHistoryFamily == family
+        let accent = family?.accentColor(dark: dark) ?? FlatPalette.blue
+        let pillID = family?.rawValue ?? "all"
+
+        return HStack(spacing: 3.5) {
+            if let family {
+                Image(systemName: family.iconName)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(isSelected ? accent : .secondary)
+            }
+            Text(label)
+                .font(.system(size: 10.5, weight: isSelected ? .semibold : .medium))
+            Text("\(count)")
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .opacity(isSelected ? 0.88 : 0.6)
+        }
+        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+        .padding(.horizontal, 8.5)
+        .padding(.vertical, 4.5)
+        .background {
+            if isSelected {
+                Capsule()
+                    .fill(FlatPalette.selectedPillBackground(dark: dark))
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                family != nil ? accent.opacity(dark ? 0.42 : 0.32) : FlatPalette.hairlineBorder(dark: dark),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(color: .black.opacity(dark ? 0.24 : 0.06), radius: 2, x: 0, y: 1)
+                    .matchedGeometryEffect(id: "historyFamilyPill", in: historyFamilyFilterNamespace)
+            } else {
+                Capsule()
+                    .fill(FlatPalette.trackBackground(dark: dark))
+            }
+        }
+        .contentShape(Capsule())
+        .overlay {
+            PointingHandCursorOverlay(
+                onClick: {
+                    withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                        selectedHistoryFamily = family
+                    }
+                }
+            )
+        }
+        .id(pillID)
+    }
+
+    private func historySessionRow(
+        item: AgentHistorySessionItem,
+        dark: Bool,
+        now: Date
+    ) -> some View {
+        let en = model.language == .english
+        let isConfirmingDelete = confirmingHistoryDeleteID == item.id
+        let isDeleteHovered = hoveredHistoryDeleteID == item.id
+        let isConfirmHovered = hoveredHistoryConfirmDeleteID == item.id
+        let isCancelHovered = hoveredHistoryCancelDeleteID == item.id
+        let isHovered = hoveredHistoryID == item.id || isDeleteHovered || isConfirmHovered || isCancelHovered || isConfirmingDelete
+        let accent = item.family.accentColor(dark: dark)
+        let isOnline = item.onlineActivityID != nil
+        let elapsed = max(0, Int(now.timeIntervalSince(item.updatedAt)))
+        let timeStr = formatRelativeAgo(elapsed, en: en)
+        let displayPath = abbreviateHomePath(item.cwdPath)
+
+        return HStack(alignment: .center, spacing: 11) {
+            Image(systemName: item.family.iconName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(item.family.tintFill(dark: dark, highlighted: isHovered || isOnline))
+                )
+
+            VStack(alignment: .leading, spacing: 4.5) {
+                // Row 1: Session Title + Top-Right Action Pill & Delete Button
+                HStack(alignment: .center, spacing: 6) {
+                    Text(item.title)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 6)
+
+                    if isOnline {
+                        HStack(spacing: 3.5) {
+                            Circle()
+                                .fill(Color(red: 0.16, green: 0.78, blue: 0.48))
+                                .frame(width: 5, height: 5)
+                            Text(en ? "Online ↗" : "在线 ↗")
+                                .font(.system(size: 10, weight: .semibold))
+                        }
+                        .foregroundStyle(dark ? Color(red: 0.34, green: 0.88, blue: 0.62) : Color(red: 0.08, green: 0.56, blue: 0.36))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(dark ? Color(red: 0.10, green: 0.25, blue: 0.18) : Color(red: 0.88, green: 0.97, blue: 0.92))
+                        )
+                        .fixedSize(horizontal: true, vertical: false)
+                    } else if isConfirmingDelete {
+                        // Reserve space for the top-trailing confirmation buttons overlay
+                        Color.clear
+                            .frame(width: en ? 116 : 112, height: 20)
+                    } else {
+                        HStack(spacing: 3) {
+                            Text(en ? "Resume" : "恢复")
+                                .font(.system(size: 10, weight: .semibold))
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 8.5, weight: .bold))
+                        }
+                        .foregroundStyle(isHovered && !isDeleteHovered ? accent : .secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(
+                                    isHovered && !isDeleteHovered
+                                        ? accent.opacity(dark ? 0.20 : 0.12)
+                                        : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
+                                )
+                        )
+                        .fixedSize(horizontal: true, vertical: false)
+
+                        // Reserve space for the top-trailing delete button overlay
+                        Color.clear
+                            .frame(width: 24, height: 20)
+                    }
+                }
+
+                // Row 2: Agent Short Name + Full ~ Abbreviated Path + Branch + Relative Time
+                HStack(alignment: .center, spacing: 5) {
+                    Text(item.family.shortName)
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(accent)
+                        .fixedSize(horizontal: true, vertical: false)
+
+                    Text("·")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(.tertiary)
+
+                    HStack(spacing: 3.5) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                        Text(displayPath)
+                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+
+                    if let branch = item.gitBranch, !branch.isEmpty {
+                        Text("·")
+                            .font(.system(size: 10.5, weight: .bold))
+                            .foregroundStyle(.tertiary)
+                        Text(branch)
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+
+                    Spacer(minLength: 6)
+
+                    Text(timeStr)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            PointingHandCursorOverlay(
+                tooltip: isOnline
+                    ? (en ? "Session is already active — click to focus Rex window (\(displayPath))" : "该会话当前已在线，点击直接跳转到对应 Rex 窗口（\(displayPath)）")
+                    : (en ? "Resume session in a new Rex tab (\(displayPath))" : "在 Rex 新建 Tab 恢复该历史会话（\(displayPath)）"),
+                onHoverChange: { hovering in
+                    hoveredHistoryID = hovering ? item.id : (hoveredHistoryID == item.id ? nil : hoveredHistoryID)
+                },
+                onClick: {
+                    if isConfirmingDelete {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16)) {
+                            confirmingHistoryDeleteID = nil
+                        }
+                        return
+                    }
+                    confirmingHistoryDeleteID = nil
+                    isHistorySearchFocused = false
+                    showingQuickLaunch = false
+                    model.resumeOrFocusHistoricalSession(item)
+                }
+            )
+        }
+        .overlay(alignment: .topTrailing) {
+            if !isOnline {
+                if isConfirmingDelete {
+                    confirmDeleteHistoryBar(
+                        item: item,
+                        isConfirmHovered: isConfirmHovered,
+                        isCancelHovered: isCancelHovered,
+                        dark: dark
+                    )
+                    .padding(.top, 9)
+                    .padding(.trailing, 11)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .trailing)))
+                } else {
+                    deleteHistoryButton(item: item, isDeleteHovered: isDeleteHovered, isRowHovered: isHovered, dark: dark)
+                        .padding(.top, 9.5)
+                        .padding(.trailing, 11)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(FlatPalette.elevatedRowBackground(dark: dark, hovered: isHovered))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            (isDeleteHovered || isConfirmingDelete)
+                                ? Color(red: 0.96, green: 0.32, blue: 0.38).opacity(dark ? 0.52 : 0.42)
+                                : (isHovered ? accent.opacity(dark ? 0.42 : 0.32) : FlatPalette.hairlineBorder(dark: dark)),
+                            lineWidth: isConfirmingDelete ? 1.2 : 1
+                        )
+                )
+        )
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16), value: isHovered)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isDeleteHovered)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: isConfirmingDelete)
+    }
+
+    private func deleteHistoryButton(
+        item: AgentHistorySessionItem,
+        isDeleteHovered: Bool,
+        isRowHovered: Bool,
+        dark: Bool
+    ) -> some View {
+        let en = model.language == .english
+        return Image(systemName: "trash")
+            .font(.system(size: 9.5, weight: .semibold))
+            .foregroundStyle(
+                isDeleteHovered
+                    ? Color(red: 0.96, green: 0.32, blue: 0.38)
+                    : Color.secondary.opacity(isRowHovered ? 0.85 : 0.5)
+            )
+            .frame(width: 22, height: 20)
+            .background(
+                Capsule()
+                    .fill(
+                        isDeleteHovered
+                            ? (dark ? Color(red: 0.36, green: 0.14, blue: 0.17) : Color(red: 1.0, green: 0.90, blue: 0.92))
+                            : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
+                    )
+            )
+            .overlay {
+                PointingHandCursorOverlay(
+                    tooltip: en ? "Delete session data" : "删除该条历史会话及本地文件",
+                    onHoverChange: { hovering in
+                        hoveredHistoryDeleteID = hovering ? item.id : (hoveredHistoryDeleteID == item.id ? nil : hoveredHistoryDeleteID)
+                    },
+                    onClick: {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                            confirmingHistoryDeleteID = item.id
+                        }
+                    }
+                )
+            }
+            .accessibilityLabel(en ? "Delete session data" : "删除该条历史会话及本地文件")
+    }
+
+    private func confirmDeleteHistoryBar(
+        item: AgentHistorySessionItem,
+        isConfirmHovered: Bool,
+        isCancelHovered: Bool,
+        dark: Bool
+    ) -> some View {
+        let en = model.language == .english
+        let redFg = dark
+            ? Color(red: 1.0, green: 0.42, blue: 0.48)
+            : Color(red: 0.84, green: 0.14, blue: 0.22)
+        let redBg = dark
+            ? (isConfirmHovered ? Color(red: 0.48, green: 0.14, blue: 0.19) : Color(red: 0.36, green: 0.12, blue: 0.16))
+            : (isConfirmHovered ? Color(red: 1.0, green: 0.82, blue: 0.85) : Color(red: 1.0, green: 0.90, blue: 0.92))
+
+        let cancelFg = FlatPalette.inkSecondary(dark: dark)
+        let cancelBg = dark
+            ? (isCancelHovered ? Color.white.opacity(0.14) : Color.white.opacity(0.07))
+            : (isCancelHovered ? Color.black.opacity(0.09) : Color.black.opacity(0.045))
+
+        return HStack(spacing: 4) {
+            // 1. Confirm Delete Button
+            HStack(spacing: 3) {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 8.5, weight: .bold))
+                Text(en ? "Delete" : "确认删除")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .foregroundStyle(redFg)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3.5)
+            .background(
+                Capsule()
+                    .fill(redBg)
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(redFg.opacity(dark ? 0.48 : 0.35), lineWidth: 1)
+                    )
+            )
+            .overlay {
+                PointingHandCursorOverlay(
+                    tooltip: en ? "Permanently delete session files from disk" : "确认永久删除该会话及其本地数据文件",
+                    onHoverChange: { hovering in
+                        hoveredHistoryConfirmDeleteID = hovering ? item.id : (hoveredHistoryConfirmDeleteID == item.id ? nil : hoveredHistoryConfirmDeleteID)
+                    },
+                    onClick: {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
+                            confirmingHistoryDeleteID = nil
+                            hoveredHistoryConfirmDeleteID = nil
+                            model.deleteHistoricalSession(item)
+                        }
+                    }
+                )
+            }
+
+            // 2. Cancel Button
+            Text(en ? "Cancel" : "取消")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(cancelFg)
+                .padding(.horizontal, 7.5)
+                .padding(.vertical, 3.5)
+                .background(
+                    Capsule()
+                        .fill(cancelBg)
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
+                        )
+                )
+                .overlay {
+                    PointingHandCursorOverlay(
+                        tooltip: en ? "Cancel deletion" : "取消删除",
+                        onHoverChange: { hovering in
+                            hoveredHistoryCancelDeleteID = hovering ? item.id : (hoveredHistoryCancelDeleteID == item.id ? nil : hoveredHistoryCancelDeleteID)
+                        },
+                        onClick: {
+                            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16)) {
+                                confirmingHistoryDeleteID = nil
+                                hoveredHistoryCancelDeleteID = nil
+                            }
+                        }
+                    )
+                }
+        }
+    }
+
+    private func newSessionLaunchSection(dark: Bool) -> some View {
         let en = model.language == .english
         let selectedFamily = model.preferredLaunchFamily
         let accent = selectedFamily.accentColor(dark: dark)
@@ -1622,12 +2227,20 @@ struct AgentMeterPanel: View {
     }
 
     private func abbreviateHomePath(_ path: String) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        if path == home { return "~" }
-        if path.hasPrefix(home + "/") {
-            return "~" + path.dropFirst(home.count)
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "~" }
+        var normalized = (trimmed as NSString).standardizingPath
+        if normalized.hasPrefix("/private/tmp") {
+            normalized = String(normalized.dropFirst("/private".count))
+        } else if normalized.hasPrefix("/private/var") {
+            normalized = String(normalized.dropFirst("/private".count))
         }
-        return path
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if normalized == home { return "~" }
+        if normalized.hasPrefix(home + "/") {
+            return "~" + normalized.dropFirst(home.count)
+        }
+        return normalized
     }
 
     private func pickCustomDirectoryAndLaunch(family: AgentFamily) {
