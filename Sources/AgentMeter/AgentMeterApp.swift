@@ -140,8 +140,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let branchStr = item.gitBranch ?? "-"
                     let collisionCount = item.hasWorkspaceCollision ? item.collisionPeerCount : 0
                     let previewStr = item.terminalPreviewLines.joined(separator: " // ")
-                    print("DUMP_ITEM | id=\(item.id) | family=\(item.family.rawValue) | status=\(item.status.rawValue) | pid=\(item.pid ?? 0) | branch=\(branchStr) | worktree=\(item.isGitWorktree) | collision=\(collisionCount) | ctx=\(ctxStr) | diff=\(diffStr) | title=\(item.title) | subtitle=\(item.subtitleText()) | preview=\(previewStr)")
+                    let hostStr = item.terminalHost.rawValue.lowercased()
+                    print("DUMP_ITEM | id=\(item.id) | host=\(hostStr) | family=\(item.family.rawValue) | status=\(item.status.rawValue) | pid=\(item.pid ?? 0) | branch=\(branchStr) | worktree=\(item.isGitWorktree) | collision=\(collisionCount) | ctx=\(ctxStr) | diff=\(diffStr) | title=\(item.title) | subtitle=\(item.subtitleText()) | preview=\(previewStr)")
                 }
+                NSApplication.shared.terminate(nil)
+            }
+            return
+        }
+        if ProcessInfo.processInfo.arguments.contains("--test-ghostty") {
+            Task { @MainActor in
+                let savedHost = UserDefaults.standard.string(forKey: "preferredTerminalHost")
+                defer {
+                    if let savedHost {
+                        UserDefaults.standard.set(savedHost, forKey: "preferredTerminalHost")
+                    } else {
+                        UserDefaults.standard.removeObject(forKey: "preferredTerminalHost")
+                    }
+                    UserDefaults.standard.synchronize()
+                }
+                let model = AgentMeterModel.shared
+                model.preferredTerminalHost = .rex
+                let resolvedRex = model.resolvedLaunchTerminalHost()
+                model.preferredTerminalHost = .ghostty
+                let resolvedGhostty = model.resolvedLaunchTerminalHost()
+                model.preferredTerminalHost = .auto
+                let resolvedAuto = model.resolvedLaunchTerminalHost()
+                let prefOK = (resolvedRex == .rex) && (resolvedGhostty == .ghostty)
+                print("TEST_GHOSTTY_PREFS | success=\(prefOK) | rex=\(resolvedRex.rawValue) | ghostty=\(resolvedGhostty.rawValue) | auto=\(resolvedAuto.rawValue)")
+                let selfTestOK = AgentActivityTracker.runGhosttySelfTest()
+                print("TEST_GHOSTTY_ALL | success=\(prefOK && selfTestOK)")
                 NSApplication.shared.terminate(nil)
             }
             return

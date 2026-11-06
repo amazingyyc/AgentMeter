@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Darwin
 import Foundation
 import SQLite3
@@ -52,42 +53,29 @@ enum AgentFamily: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .codex:
             return dark
-                ? Color(red: 0.34, green: 0.88, blue: 0.66)
-                : Color(red: 0.08, green: 0.56, blue: 0.38)
+                ? Color(red: 52.0 / 255, green: 211.0 / 255, blue: 153.0 / 255)
+                : Color(red: 16.0 / 255, green: 163.0 / 255, blue: 127.0 / 255)
         case .claude:
             return dark
-                ? Color(red: 0.95, green: 0.55, blue: 0.38)
-                : Color(red: 0.80, green: 0.35, blue: 0.18)
+                ? Color(red: 232.0 / 255, green: 130.0 / 255, blue: 90.0 / 255)
+                : Color(red: 217.0 / 255, green: 119.0 / 255, blue: 87.0 / 255)
         case .copilot:
             return dark
-                ? Color(red: 0.44, green: 0.72, blue: 0.99)
-                : Color(red: 0.16, green: 0.44, blue: 0.88)
+                ? Color(red: 96.0 / 255, green: 165.0 / 255, blue: 250.0 / 255)
+                : Color(red: 59.0 / 255, green: 130.0 / 255, blue: 246.0 / 255)
         case .antigravity:
             return dark
-                ? Color(red: 0.75, green: 0.54, blue: 0.99)
-                : Color(red: 0.49, green: 0.23, blue: 0.88)
+                ? Color(red: 167.0 / 255, green: 139.0 / 255, blue: 250.0 / 255)
+                : Color(red: 139.0 / 255, green: 92.0 / 255, blue: 246.0 / 255)
         }
     }
 
     func tintFill(dark: Bool, highlighted: Bool = false) -> Color {
-        switch self {
-        case .codex:
-            return dark
-                ? (highlighted ? Color(red: 0.12, green: 0.29, blue: 0.23) : Color(red: 0.11, green: 0.23, blue: 0.19))
-                : (highlighted ? Color(red: 0.84, green: 0.96, blue: 0.90) : Color(red: 0.90, green: 0.98, blue: 0.94))
-        case .claude:
-            return dark
-                ? (highlighted ? Color(red: 0.33, green: 0.19, blue: 0.14) : Color(red: 0.26, green: 0.16, blue: 0.12))
-                : (highlighted ? Color(red: 0.99, green: 0.90, blue: 0.85) : Color(red: 1.00, green: 0.94, blue: 0.90))
-        case .copilot:
-            return dark
-                ? (highlighted ? Color(red: 0.13, green: 0.24, blue: 0.38) : Color(red: 0.11, green: 0.20, blue: 0.31))
-                : (highlighted ? Color(red: 0.85, green: 0.92, blue: 0.99) : Color(red: 0.91, green: 0.95, blue: 1.00))
-        case .antigravity:
-            return dark
-                ? (highlighted ? Color(red: 0.26, green: 0.17, blue: 0.38) : Color(red: 0.20, green: 0.14, blue: 0.30))
-                : (highlighted ? Color(red: 0.92, green: 0.87, blue: 0.99) : Color(red: 0.95, green: 0.92, blue: 1.00))
-        }
+        accentColor(dark: dark).opacity(
+            dark
+                ? (highlighted ? 0.18 : 0.11)
+                : (highlighted ? 0.12 : 0.07)
+        )
     }
 }
 
@@ -104,10 +92,40 @@ enum AgentApprovalChoice: Sendable {
     case deny
 }
 
+enum TerminalHostKind: String, CaseIterable, Identifiable, Sendable {
+    case rex = "Rex"
+    case ghostty = "Ghostty"
+
+    var id: String { rawValue }
+    var displayName: String { rawValue }
+}
+
+enum PreferredTerminalHost: String, CaseIterable, Identifiable, Sendable {
+    case auto = "auto"
+    case rex = "rex"
+    case ghostty = "ghostty"
+
+    var id: String { rawValue }
+    func title(language: AppLanguage) -> String {
+        switch self {
+        case .auto: return language == .english ? "Auto" : "自动"
+        case .rex: return "Rex"
+        case .ghostty: return "Ghostty"
+        }
+    }
+}
+
 struct RexPaneLocation: Sendable, Equatable {
     let sessionID: String
     let windowID: String?
     let blockID: String
+}
+
+struct GhosttyPaneLocation: Sendable, Equatable {
+    let windowID: String
+    let tabID: String?
+    let terminalID: String
+    let ttyPath: String?
 }
 
 struct GitDiffSummary: Equatable, Sendable {
@@ -167,6 +185,7 @@ struct AgentActivityItem: Identifiable, Equatable, Sendable {
     var pid: Int32?
     var tty: String?
     var rexPane: RexPaneLocation?
+    var ghosttyPane: GhosttyPaneLocation? = nil
     var terminalPreviewLines: [String] = []
     var contextPercentUsed: Int? = nil
     var gitDiff: GitDiffSummary? = nil
@@ -175,8 +194,13 @@ struct AgentActivityItem: Identifiable, Equatable, Sendable {
     var hasWorkspaceCollision: Bool = false
     var collisionPeerCount: Int = 0
 
+    var terminalHost: TerminalHostKind {
+        if ghosttyPane != nil { return .ghostty }
+        return .rex
+    }
+
     static let promptCacheWarmTTLSeconds: Int = 300
-    static let longRunningWorkingThresholdSeconds: Int = 180
+    static let longRunningWorkingThresholdSeconds: Int = 1800
 
     func isLongRunningWorking(now: Date = Date()) -> Bool {
         guard status == .working else { return false }
@@ -196,6 +220,9 @@ struct AgentActivityItem: Identifiable, Equatable, Sendable {
     func subtitleText(now: Date = Date()) -> String {
         let en = AppLanguage.current == .english
         var parts: [String] = [family.badgeTitle]
+        if terminalHost == .ghostty {
+            parts.append("Ghostty")
+        }
         if let sshTarget, !sshTarget.isEmpty {
             parts.append(sshTarget)
         } else if !workspace.isEmpty,
@@ -363,8 +390,14 @@ final class AgentActivityTracker {
                         detail: en ? "Terminal idle" : "终端待命",
                         updatedAt: now.addingTimeInterval(-120),
                         pid: 39562,
-                        tty: "ttys005",
+                        tty: "ttys016",
                         rexPane: nil,
+                        ghosttyPane: GhosttyPaneLocation(
+                            windowID: "demo-win",
+                            tabID: "demo-tab",
+                            terminalID: "demo-term",
+                            ttyPath: "/dev/ttys016"
+                        ),
                         terminalPreviewLines: [
                             en ? "• Generated typed hooks in src/graphql/generated.ts" : "• 已在 src/graphql/generated.ts 生成类型化 Hooks",
                         ],
@@ -529,7 +562,7 @@ final class AgentActivityTracker {
     func jumpToSession(_ item: AgentActivityItem) async -> Bool {
         unreadCompletionIDs.remove(item.id)
         return await Task.detached(priority: .userInitiated) {
-            Self.performRexJump(for: item)
+            Self.performJump(for: item)
         }.value
     }
 
@@ -540,7 +573,7 @@ final class AgentActivityTracker {
     func respondToPermissionPrompt(_ item: AgentActivityItem, choice: AgentApprovalChoice) async -> Bool {
         unreadCompletionIDs.remove(item.id)
         let ok = await Task.detached(priority: .userInitiated) {
-            Self.performRexApprovalWrite(for: item, choice: choice)
+            Self.performApprovalWrite(for: item, choice: choice)
         }.value
         if ok {
             if choice == .approvePrimary || choice == .approveSecondary {
@@ -556,7 +589,7 @@ final class AgentActivityTracker {
     func sendInlinePrompt(_ item: AgentActivityItem, text: String) async -> Bool {
         unreadCompletionIDs.remove(item.id)
         let ok = await Task.detached(priority: .userInitiated) {
-            Self.performRexPromptWrite(for: item, text: text)
+            Self.performPromptWrite(for: item, text: text)
         }.value
         if ok {
             recentCompletions.removeValue(forKey: item.id)
@@ -569,7 +602,7 @@ final class AgentActivityTracker {
     func interruptSession(_ item: AgentActivityItem) async -> Bool {
         unreadCompletionIDs.remove(item.id)
         let ok = await Task.detached(priority: .userInitiated) {
-            Self.performRexInterrupt(for: item)
+            Self.performInterrupt(for: item)
         }.value
         if ok {
             workingStreakCounts.removeValue(forKey: item.id)
@@ -582,37 +615,63 @@ final class AgentActivityTracker {
         return ok
     }
 
-    func launchNewSession(family: AgentFamily, cwdPath: String, customCommand: String) async -> Bool {
+    func launchNewSession(
+        family: AgentFamily,
+        cwdPath: String,
+        customCommand: String,
+        preferredHost: TerminalHostKind = .rex
+    ) async -> Bool {
         await Task.detached(priority: .userInitiated) {
-            Self.performRexLaunch(family: family, cwdPath: cwdPath, customCommand: customCommand)
+            Self.performLaunch(
+                family: family,
+                cwdPath: cwdPath,
+                customCommand: customCommand,
+                preferredHost: preferredHost
+            )
         }.value
     }
 
-    func launchWorkspaceSession(family: AgentFamily, workspace: LaunchWorkspaceItem, customCommand: String) async -> Bool {
+    func launchWorkspaceSession(
+        family: AgentFamily,
+        workspace: LaunchWorkspaceItem,
+        customCommand: String,
+        preferredHost: TerminalHostKind = .rex
+    ) async -> Bool {
         if let sshTarget = workspace.sshTarget, !sshTarget.isEmpty {
             return await Task.detached(priority: .userInitiated) {
-                Self.performRexSSHLaunch(
+                Self.performSSHLaunch(
                     family: family,
                     sshTarget: sshTarget,
                     remotePath: workspace.path,
-                    customCommand: customCommand
+                    customCommand: customCommand,
+                    preferredHost: preferredHost
                 )
             }.value
         } else {
             return await Task.detached(priority: .userInitiated) {
-                Self.performRexLaunch(family: family, cwdPath: workspace.path, customCommand: customCommand)
+                Self.performLaunch(
+                    family: family,
+                    cwdPath: workspace.path,
+                    customCommand: customCommand,
+                    preferredHost: preferredHost
+                )
             }.value
         }
     }
 
-    func resumeHistoricalSession(_ item: AgentHistorySessionItem, baseCommand: String) async -> Bool {
+    func resumeHistoricalSession(
+        _ item: AgentHistorySessionItem,
+        baseCommand: String,
+        preferredHost: TerminalHostKind = .rex
+    ) async -> Bool {
         let resumeCommand = Self.buildResumeCommand(for: item, baseCommand: baseCommand)
         return await Task.detached(priority: .userInitiated) {
-            Self.performRexLaunch(
+            Self.performLaunch(
                 family: item.family,
                 cwdPath: item.cwdPath,
                 customCommand: resumeCommand,
-                preferredTabTitle: item.title
+                preferredTabTitle: item.title,
+                preferredHost: preferredHost
             )
         }.value
     }
@@ -1004,6 +1063,7 @@ final class AgentActivityTracker {
         private var remoteGitInFlight: Set<String> = []
         private var lastKnownRemoteCwdByBlock: [String: String] = [:]
         private var lastGoodRexBlocks: (timestamp: TimeInterval, map: [Int32: RexBlockEntry])?
+        private var lastGoodGhosttyTerminals: (timestamp: TimeInterval, entries: [GhosttyTerminalEntry])?
 
         func cachedRexBlocksFallback(now: TimeInterval, maxAge: TimeInterval = 6.0) -> [Int32: RexBlockEntry]? {
             lock.lock()
@@ -1018,6 +1078,21 @@ final class AgentActivityTracker {
             lock.lock()
             defer { lock.unlock() }
             lastGoodRexBlocks = (now, map)
+        }
+
+        func cachedGhosttyTerminalsFallback(now: TimeInterval, maxAge: TimeInterval = 6.0) -> [GhosttyTerminalEntry]? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard let entry = lastGoodGhosttyTerminals, (now - entry.timestamp) < maxAge else {
+                return nil
+            }
+            return entry.entries
+        }
+
+        func setCachedGhosttyTerminals(_ entries: [GhosttyTerminalEntry], now: TimeInterval) {
+            lock.lock()
+            defer { lock.unlock() }
+            lastGoodGhosttyTerminals = (now, entries)
         }
 
         func cachedRemoteGit(
@@ -1209,8 +1284,44 @@ final class AgentActivityTracker {
         let scanned = scanAgentProcesses()
         DiscoveryCache.shared.pruneDeadPIDs(Set(scanned.candidates.map(\.pid)))
 
+        let ghosttyAppPID = runningGhosttyApplication()?.processIdentifier
+        let isGhosttyFront = isGhosttyFrontmostOrRecentlyActive()
+        let ghosttyEntries = queryGhosttyTerminals(
+            sshPIDsByTTY: scanned.sshPIDsByTTY,
+            ppidMap: scanned.ppidMap
+        )
+        var ghosttyMap: [Int32: GhosttyTerminalEntry] = [:]
+        var ghosttyByTermID: [String: GhosttyTerminalEntry] = [:]
+        for entry in ghosttyEntries {
+            ghosttyByTermID[entry.location.terminalID] = entry
+        }
+        for proc in scanned.candidates {
+            if let matched = matchGhosttyEntry(for: proc, ppidMap: scanned.ppidMap, entries: ghosttyEntries) {
+                ghosttyMap[proc.pid] = matched
+            } else if rexMap[proc.pid] == nil,
+                      isDescendantOfGhostty(pid: proc.pid, ghosttyAppPID: ghosttyAppPID, ppidMap: scanned.ppidMap) {
+                let fallbackLocation = GhosttyPaneLocation(
+                    windowID: "",
+                    tabID: nil,
+                    terminalID: "pid-\(proc.pid)",
+                    ttyPath: proc.tty.map { "/dev/\($0)" }
+                )
+                let fallbackEntry = GhosttyTerminalEntry(
+                    location: fallbackLocation,
+                    pid: proc.pid,
+                    ttyName: proc.tty,
+                    cwdPath: proc.cwdPath,
+                    rawTitle: nil,
+                    isFocusedInActiveWindow: isGhosttyFront,
+                    screenTail: nil
+                )
+                ghosttyMap[proc.pid] = fallbackEntry
+                ghosttyByTermID[fallbackLocation.terminalID] = fallbackEntry
+            }
+        }
+
         let processes = scanned.candidates.filter { proc in
-            rexMap[proc.pid] != nil || hasInteractiveHostApplication(
+            rexMap[proc.pid] != nil || ghosttyMap[proc.pid] != nil || hasInteractiveHostApplication(
                 pid: proc.pid,
                 ppidMap: scanned.ppidMap,
                 regularPIDs: regularPIDs
@@ -1232,9 +1343,11 @@ final class AgentActivityTracker {
 
             for proc in codexProcs {
                 let rexEntry = rexMap[proc.pid]
+                let ghosttyEntry = rexEntry == nil ? ghosttyMap[proc.pid] : nil
                 let matchingSession = matchCodexSession(
                     for: proc,
                     rexEntry: rexEntry,
+                    ghosttyEntry: ghosttyEntry,
                     exactThreadID: pidThreadMap[proc.pid],
                     sessions: codexSessions,
                     titles: codexTitles,
@@ -1244,38 +1357,69 @@ final class AgentActivityTracker {
                 let status: AgentTaskStatus
                 if let rexEntry {
                     status = rexEntry.inferredStatus
+                } else if let ghosttyEntry {
+                    let inferred = ghosttyEntry.inferredStatus
+                    let isSessionWorking = matchingSession?.isTaskRunning == true
+                    let isProcBusy = proc.cpu > 3.5
+                    if inferred == .needsInput {
+                        status = .needsInput
+                    } else if isSessionWorking || isProcBusy || inferred == .working {
+                        status = .working
+                    } else {
+                        status = inferred
+                    }
                 } else {
                     let isSessionWorking = matchingSession?.isTaskRunning == true
                     let isProcBusy = proc.cpu > 3.5
                     status = (isSessionWorking || isProcBusy) ? .working : .idle
                 }
                 let en = AppLanguage.current == .english
-                let detail = status == .working ? (en ? "Running task" : "正在执行任务") : (en ? "Terminal idle" : "终端待命")
+                let detail = status == .needsInput
+                    ? (en ? "Awaiting confirmation" : "等待确认")
+                    : (status == .working ? (en ? "Running task" : "正在执行任务") : (en ? "Terminal idle" : "终端待命"))
+                let effectiveCwd = !proc.cwdPath.isEmpty ? proc.cwdPath : (ghosttyEntry?.cwdPath ?? "")
+                let effectiveWorkspace: String = {
+                    let name = URL(fileURLWithPath: effectiveCwd).lastPathComponent
+                    return name.isEmpty || name == "/" ? proc.workspaceName : name
+                }()
                 let sessionTitle = matchingSession.flatMap { codexTitles.bySessionID[$0.sessionID] ?? $0.fallbackTitle }
-                let resolvedTitle = rexEntry?.descriptiveTitle
+                let primaryTitle: String? = rexEntry?.descriptiveTitle
+                    ?? ghosttyEntry?.descriptiveTitle
                     ?? sessionTitle
                     ?? rexEntry?.latestScreenPrompt
-                    ?? codexTitles.byCwd[proc.cwdPath]
+                    ?? ghosttyEntry?.latestScreenPrompt
+                let fallbackTitle: String? = codexTitles.byCwd[effectiveCwd]
                     ?? rexEntry?.cleanTitle
-                    ?? proc.workspaceName
-                let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" }
-                    ?? matchingSession.map { "codex-\($0.sessionID)-pid-\(proc.pid)" }
-                    ?? "codex-pid-\(proc.pid)"
+                    ?? ghosttyEntry?.cleanTitle
+                let resolvedTitle = primaryTitle ?? fallbackTitle ?? effectiveWorkspace
+                let itemID: String = {
+                    if let rexEntry {
+                        return "rex-block-\(rexEntry.location.blockID)"
+                    }
+                    if let matchingSession {
+                        return "codex-\(matchingSession.sessionID)-pid-\(proc.pid)"
+                    }
+                    if let ghosttyEntry {
+                        return "ghostty-term-\(ghosttyEntry.location.terminalID)-pid-\(proc.pid)"
+                    }
+                    return "codex-pid-\(proc.pid)"
+                }()
                 results.append(
                     AgentActivityItem(
                         id: itemID,
                         sessionID: matchingSession?.sessionID,
                         family: .codex,
-                        workspace: proc.workspaceName,
-                        cwdPath: proc.cwdPath,
+                        workspace: effectiveWorkspace,
+                        cwdPath: effectiveCwd,
                         title: resolvedTitle,
                         status: status,
-                        isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? false,
+                        isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? ghosttyEntry?.isFocusedInActiveWindow ?? false,
                         detail: detail,
                         updatedAt: matchingSession?.updatedAt ?? syntheticTimestampSentinel,
                         pid: proc.pid,
-                        tty: proc.tty,
-                        rexPane: rexEntry?.location
+                        tty: proc.tty ?? ghosttyEntry?.ttyName,
+                        rexPane: rexEntry?.location,
+                        ghosttyPane: ghosttyEntry?.location
                     )
                 )
             }
@@ -1283,17 +1427,17 @@ final class AgentActivityTracker {
 
         // 2. Claude Code CLI sessions
         let claudeProcs = processes.filter { $0.family == .claude }
-        let claudeSessions = inspectClaudeSessions(home: home, liveProcesses: claudeProcs, rexMap: rexMap)
+        let claudeSessions = inspectClaudeSessions(home: home, liveProcesses: claudeProcs, rexMap: rexMap, ghosttyMap: ghosttyMap)
         results.append(contentsOf: claudeSessions)
 
         // 3. Copilot CLI sessions
         let copilotProcs = processes.filter { $0.family == .copilot }
-        let copilotSessions = inspectCopilotSessions(home: home, liveProcesses: copilotProcs, rexMap: rexMap)
+        let copilotSessions = inspectCopilotSessions(home: home, liveProcesses: copilotProcs, rexMap: rexMap, ghosttyMap: ghosttyMap)
         results.append(contentsOf: copilotSessions)
 
         // 4. Antigravity CLI sessions
         let agyProcs = processes.filter { $0.family == .antigravity }
-        let agySessions = inspectAntigravitySessions(home: home, liveProcesses: agyProcs, rexMap: rexMap)
+        let agySessions = inspectAntigravitySessions(home: home, liveProcesses: agyProcs, rexMap: rexMap, ghosttyMap: ghosttyMap)
         results.append(contentsOf: agySessions)
 
         // 5. Rex panes reporting agent status via OSC 7501 (e.g., remote SSH sessions running Codex/Claude/Copilot/Antigravity)
@@ -1345,8 +1489,69 @@ final class AgentActivityTracker {
             )
         }
 
-        // Normalize SSH prefix, remote target, and live terminal preview if any matched Rex pane is available
+        // 6. Ghostty terminals running remote SSH sessions (or standalone TUI sessions) reporting Agent title/screen status
+        let coveredGhosttyTermIDs = Set(results.compactMap { $0.ghosttyPane?.terminalID })
+        let updatedCoveredPIDs = Set(results.compactMap(\.pid))
+        for ghosttyEntry in ghosttyEntries where !coveredGhosttyTermIDs.contains(ghosttyEntry.location.terminalID) && !updatedCoveredPIDs.contains(ghosttyEntry.pid) {
+            guard let family = ghosttyEntry.detectedFamily else { continue }
+            let en = AppLanguage.current == .english
+            let status = ghosttyEntry.inferredStatus
+            let blockCacheKey = "ghostty:\(ghosttyEntry.location.terminalID)"
+            let effectiveCwd: String = {
+                guard ghosttyEntry.isSSH else { return ghosttyEntry.cwdPath }
+                if let remoteCwd = ghosttyEntry.remoteCwdPath, !remoteCwd.isEmpty, remoteCwd != "~" {
+                    DiscoveryCache.shared.rememberRemoteCwd(remoteCwd, forBlock: blockCacheKey)
+                    return remoteCwd
+                }
+                if let remembered = DiscoveryCache.shared.lastKnownRemoteCwd(forBlock: blockCacheKey),
+                   !remembered.isEmpty {
+                    return remembered
+                }
+                return ghosttyEntry.remoteCwdPath ?? "~"
+            }()
+            let wsName = URL(fileURLWithPath: effectiveCwd).lastPathComponent
+            let baseTitle = ghosttyEntry.cleanTitle ?? ghosttyEntry.latestScreenPrompt ?? (en ? "\(family.shortName) Session" : "\(family.shortName) 会话")
+            let displayTitle: String = {
+                if ghosttyEntry.isSSH, !baseTitle.uppercased().hasPrefix("SSH ") && !baseTitle.uppercased().hasPrefix("[SSH]") {
+                    return "SSH · \(baseTitle)"
+                }
+                return baseTitle
+            }()
+            let resolvedSSHTarget = ghosttyEntry.sshTarget.map { resolveSSHHostAlias($0, ipToAlias: sshConfig.ipToAlias) }
+            results.append(
+                AgentActivityItem(
+                    id: "ghostty-term-\(ghosttyEntry.location.terminalID)",
+                    family: family,
+                    workspace: wsName.isEmpty || wsName == "/" || wsName == "~" ? family.shortName : wsName,
+                    cwdPath: effectiveCwd,
+                    sshTarget: resolvedSSHTarget,
+                    title: displayTitle,
+                    status: status,
+                    isFocusedInHost: ghosttyEntry.isFocusedInActiveWindow,
+                    detail: status == .needsInput
+                        ? (en ? "Awaiting confirmation" : "等待确认")
+                        : (status == .working ? (en ? "Running task" : "正在执行任务") : (en ? "Terminal idle" : "终端待命")),
+                    updatedAt: syntheticTimestampSentinel,
+                    pid: ghosttyEntry.sshPID ?? ghosttyEntry.pid,
+                    tty: ghosttyEntry.ttyName,
+                    rexPane: nil,
+                    ghosttyPane: ghosttyEntry.location
+                )
+            )
+        }
+
+        // Normalize SSH prefix, remote target, and live terminal preview if any matched Rex or Ghostty pane is available
         for idx in results.indices {
+            let matchedGhostty: GhosttyTerminalEntry? = {
+                if let termID = results[idx].ghosttyPane?.terminalID, let entry = ghosttyByTermID[termID] {
+                    return entry
+                }
+                if let pid = results[idx].pid, let entry = ghosttyMap[pid] {
+                    return entry
+                }
+                return nil
+            }()
+
             if let pid = results[idx].pid,
                let rexEntry = rexMap[pid] {
                 if results[idx].terminalPreviewLines.isEmpty {
@@ -1373,6 +1578,32 @@ final class AgentActivityTracker {
                         results[idx].title = "SSH · \(results[idx].title)"
                     }
                 }
+            } else if let ghosttyEntry = matchedGhostty {
+                if results[idx].terminalPreviewLines.isEmpty {
+                    let preview = ghosttyEntry.previewLines
+                    if !preview.isEmpty {
+                        results[idx].terminalPreviewLines = preview
+                    }
+                }
+                if results[idx].contextPercentUsed == nil {
+                    results[idx].contextPercentUsed = ghosttyEntry.contextPercentUsed
+                }
+                if ghosttyEntry.isSSH {
+                    let blockCacheKey = "ghostty:\(ghosttyEntry.location.terminalID)"
+                    results[idx].sshTarget = ghosttyEntry.sshTarget.map { resolveSSHHostAlias($0, ipToAlias: sshConfig.ipToAlias) }
+                    if let remoteCwd = ghosttyEntry.remoteCwdPath, !remoteCwd.isEmpty, remoteCwd != "~" {
+                        DiscoveryCache.shared.rememberRemoteCwd(remoteCwd, forBlock: blockCacheKey)
+                        results[idx].cwdPath = remoteCwd
+                    } else if let remembered = DiscoveryCache.shared.lastKnownRemoteCwd(forBlock: blockCacheKey),
+                              !remembered.isEmpty {
+                        results[idx].cwdPath = remembered
+                    } else if let remoteCwd = ghosttyEntry.remoteCwdPath, !remoteCwd.isEmpty {
+                        results[idx].cwdPath = remoteCwd
+                    }
+                    if !results[idx].title.uppercased().hasPrefix("SSH ") && !results[idx].title.uppercased().hasPrefix("[SSH]") {
+                        results[idx].title = "SSH · \(results[idx].title)"
+                    }
+                }
             }
             if results[idx].terminalPreviewLines.isEmpty, let detail = results[idx].detail, !detail.isEmpty {
                 results[idx].terminalPreviewLines = [detail]
@@ -1393,8 +1624,8 @@ final class AgentActivityTracker {
                 if results[idx].gitBranch == nil {
                     let rexEntry = results[idx].pid.flatMap { rexMap[$0] }
                     results[idx].gitBranch = extractGitBranchFromTerminal(
-                        tail: rexEntry?.screenTail,
-                        title: rexEntry?.rawTitle ?? results[idx].title
+                        tail: rexEntry?.screenTail ?? matchedGhostty?.screenTail,
+                        title: rexEntry?.rawTitle ?? matchedGhostty?.rawTitle ?? results[idx].title
                     )
                 }
                 if results[idx].gitDiff == nil {
@@ -1419,8 +1650,8 @@ final class AgentActivityTracker {
                 if results[idx].gitBranch == nil {
                     let rexEntry = results[idx].pid.flatMap { rexMap[$0] }
                     results[idx].gitBranch = extractGitBranchFromTerminal(
-                        tail: rexEntry?.screenTail,
-                        title: rexEntry?.rawTitle ?? results[idx].title
+                        tail: rexEntry?.screenTail ?? matchedGhostty?.screenTail,
+                        title: rexEntry?.rawTitle ?? matchedGhostty?.rawTitle ?? results[idx].title
                     )
                 }
             }
@@ -1536,7 +1767,7 @@ final class AgentActivityTracker {
         for idx in items.indices {
             let item = items[idx]
             // Only consider online process sessions
-            guard item.pid != nil || item.rexPane != nil else { continue }
+            guard item.pid != nil || item.rexPane != nil || item.ghosttyPane != nil else { continue }
 
             let checkoutKey: String? = {
                 if let sshTarget = item.sshTarget?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1855,6 +2086,7 @@ final class AgentActivityTracker {
     private struct ScannedProcesses {
         let candidates: [ProcessEntry]
         let ppidMap: [Int32: Int32]
+        let sshPIDsByTTY: [String: Int32]
     }
 
     private nonisolated static let machTimebaseNumer: UInt64 = {
@@ -1871,16 +2103,17 @@ final class AgentActivityTracker {
 
     private nonisolated static func scanAgentProcesses() -> ScannedProcesses {
         var count = proc_listallpids(nil, 0)
-        guard count > 0 else { return ScannedProcesses(candidates: [], ppidMap: [:]) }
+        guard count > 0 else { return ScannedProcesses(candidates: [], ppidMap: [:], sshPIDsByTTY: [:]) }
         var pids = [Int32](repeating: 0, count: Int(count) + 64)
         let byteSize = Int32(pids.count * MemoryLayout<Int32>.stride)
         count = proc_listallpids(&pids, byteSize)
-        guard count > 0 else { return ScannedProcesses(candidates: [], ppidMap: [:]) }
+        guard count > 0 else { return ScannedProcesses(candidates: [], ppidMap: [:], sshPIDsByTTY: [:]) }
 
         let myUID = getuid()
         let now = Date().timeIntervalSince1970
         var ppidMap: [Int32: Int32] = [:]
         ppidMap.reserveCapacity(Int(count))
+        var sshPIDsByTTY: [String: Int32] = [:]
         var entries: [ProcessEntry] = []
 
         let bsdSize = Int32(MemoryLayout<proc_bsdinfo>.stride)
@@ -1917,9 +2150,17 @@ final class AgentActivityTracker {
                 }
                 : effectiveComm
 
-            // Fast pre-filter before inspecting full command-line args
             let lowerComm = effectiveComm.lowercased()
             let lowerExec = execPath.lowercased()
+            let ttyDev = bsdInfo.e_tdev
+            let tty: String? = (ttyDev != UInt32.max && ttyDev != 0) ? String(format: "ttys%03d", ttyDev & 0xff) : nil
+
+            if lowerComm == "ssh" || lowerExec.hasSuffix("/ssh"), let tty {
+                sshPIDsByTTY[tty] = pid
+                continue
+            }
+
+            // Fast pre-filter before inspecting full command-line args
             let maybeAgent = lowerComm == "codex" || lowerComm == "claude" || lowerComm == "copilot" ||
                 lowerComm == "agy" || lowerComm == "antigravity" || lowerComm == "node" ||
                 lowerExec.contains("codex") || lowerExec.contains("claude") ||
@@ -1937,12 +2178,10 @@ final class AgentActivityTracker {
                 cpu = DiscoveryCache.shared.computeCPUPercent(pid: pid, totalTimeNs: totalNs, now: now)
             }
 
-            let ttyDev = bsdInfo.e_tdev
-            let tty: String? = (ttyDev != UInt32.max && ttyDev != 0) ? String(format: "ttys%03d", ttyDev & 0xff) : nil
             let cwd = processWorkingDirectory(pid: pid) ?? ""
             entries.append(ProcessEntry(pid: pid, ppid: ppid, tty: tty, family: family, cpu: cpu, cwdPath: cwd))
         }
-        return ScannedProcesses(candidates: entries, ppidMap: ppidMap)
+        return ScannedProcesses(candidates: entries, ppidMap: ppidMap, sshPIDsByTTY: sshPIDsByTTY)
     }
 
     private nonisolated static func processCommandLineArgs(pid: Int32) -> String? {
@@ -1987,6 +2226,9 @@ final class AgentActivityTracker {
         let lowerComm = comm.lowercased()
         let lowerArgs = args.lowercased()
 
+        if lowerArgs.contains("daemon run") || lowerArgs.contains("bg-pty-host") || lowerArgs.contains("bg-spare") || lowerArgs.contains("--bg-spare") || lowerArgs.contains("--bg-pty-host") {
+            return nil
+        }
         if lowerArgs.contains("app-server") || lowerArgs.contains("code-mode-host") || lowerArgs.contains("bridge.py") {
             return nil
         }
@@ -1994,22 +2236,31 @@ final class AgentActivityTracker {
             return nil
         }
 
-        if lowerComm.hasSuffix("/codex") || lowerComm == "codex" || lowerArgs.contains("/bin/codex") {
+        let firstArgToken = lowerArgs.split(separator: " ").first.map(String.init) ?? lowerArgs
+
+        if lowerComm.hasSuffix("/codex") || lowerComm == "codex" ||
+           firstArgToken == "codex" || firstArgToken.hasSuffix("/codex") ||
+           lowerArgs.contains("/bin/codex") || lowerArgs.contains("@openai/codex") {
             return .codex
         }
         if lowerComm.hasSuffix("/claude") || lowerComm == "claude" ||
+           lowerComm.contains("/share/claude/versions/") || lowerComm.contains("/claude/versions/") ||
+           firstArgToken == "claude" || firstArgToken.hasSuffix("/claude") ||
            lowerArgs.contains("/bin/claude") || lowerArgs.contains("@anthropic-ai/claude-code") ||
            lowerArgs.contains("/share/claude/versions/") {
             if lowerArgs.contains("claude.app/") { return nil }
             return .claude
         }
         if lowerComm.hasSuffix("/copilot") || lowerComm == "copilot" ||
+           firstArgToken == "copilot" || firstArgToken.hasSuffix("/copilot") ||
            lowerArgs.contains("/copilot-cli/") || lowerArgs.contains("@github/copilot") ||
            lowerArgs.contains("/bin/copilot") || lowerArgs.contains("gh copilot") {
             return .copilot
         }
         if lowerComm.hasSuffix("/agy") || lowerComm == "agy" ||
            lowerComm.hasSuffix("/antigravity") || lowerComm == "antigravity" ||
+           firstArgToken == "agy" || firstArgToken.hasSuffix("/agy") ||
+           firstArgToken == "antigravity" || firstArgToken.hasSuffix("/antigravity") ||
            lowerArgs.contains("/bin/agy") || lowerArgs.contains("antigravity-cli") {
             if lowerArgs.contains("language_server") { return nil }
             return .antigravity
@@ -2053,6 +2304,7 @@ final class AgentActivityTracker {
     private nonisolated static func matchCodexSession(
         for proc: ProcessEntry,
         rexEntry: RexBlockEntry?,
+        ghosttyEntry: GhosttyTerminalEntry? = nil,
         exactThreadID: String?,
         sessions: [CodexSessionInfo],
         titles: CodexTitleIndex,
@@ -2072,7 +2324,7 @@ final class AgentActivityTracker {
             )
         }
 
-        let screenPrompts = rexEntry?.screenPrompts ?? []
+        let screenPrompts = rexEntry?.screenPrompts ?? ghosttyEntry?.screenPrompts ?? []
 
         if !screenPrompts.isEmpty {
             for prompt in screenPrompts.reversed() {
@@ -2414,7 +2666,8 @@ final class AgentActivityTracker {
     private nonisolated static func inspectClaudeSessions(
         home: URL,
         liveProcesses: [ProcessEntry],
-        rexMap: [Int32: RexBlockEntry]
+        rexMap: [Int32: RexBlockEntry],
+        ghosttyMap: [Int32: GhosttyTerminalEntry]
     ) -> [AgentActivityItem] {
         guard !liveProcesses.isEmpty else { return [] }
         let pidMetaMap = loadClaudePIDMetadata(home: home, pids: liveProcesses.map(\.pid))
@@ -2423,8 +2676,12 @@ final class AgentActivityTracker {
 
         for proc in liveProcesses {
             let rexEntry = rexMap[proc.pid]
+            let ghosttyEntry = rexEntry == nil ? ghosttyMap[proc.pid] : nil
             let meta = pidMetaMap[proc.pid]
-            let cwdPath = (meta?.cwdPath.isEmpty == false ? meta?.cwdPath : nil) ?? proc.cwdPath
+            let cwdPath = (meta?.cwdPath.isEmpty == false ? meta?.cwdPath : nil)
+                ?? (!proc.cwdPath.isEmpty ? proc.cwdPath : nil)
+                ?? ghosttyEntry?.cwdPath
+                ?? ""
             let workspaceName: String = {
                 let name = URL(fileURLWithPath: cwdPath).lastPathComponent
                 return name.isEmpty || name == "/" ? "Claude" : name
@@ -2445,6 +2702,15 @@ final class AgentActivityTracker {
                 } else {
                     status = inferred
                 }
+            } else if let ghosttyEntry {
+                let inferred = ghosttyEntry.inferredStatus
+                if inferred == .needsInput {
+                    status = .needsInput
+                } else if metaBusy || proc.cpu > 3.5 || inferred == .working {
+                    status = .working
+                } else {
+                    status = inferred
+                }
             } else {
                 let isWorking = metaBusy || (proc.cpu > 3.5)
                 status = isWorking ? .working : .idle
@@ -2452,17 +2718,30 @@ final class AgentActivityTracker {
 
             let primaryTitle: String? = transcript?.aiTitle
                 ?? rexEntry?.descriptiveTitle
+                ?? ghosttyEntry?.descriptiveTitle
                 ?? transcript?.lastPrompt
                 ?? meta.flatMap { historyPrompts[$0.sessionID] }
             let fallbackTitle: String? = rexEntry?.latestScreenPrompt
+                ?? ghosttyEntry?.latestScreenPrompt
                 ?? rexEntry?.cleanTitle
+                ?? ghosttyEntry?.cleanTitle
                 ?? meta?.name
             let sessionTitle: String = primaryTitle ?? fallbackTitle ?? workspaceName
 
             let updatedAt = [meta?.updatedAt, transcript?.modDate].compactMap { $0 }.max() ?? syntheticTimestampSentinel
-            let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" }
-                ?? meta.map { "claude-\($0.sessionID)-pid-\(proc.pid)" }
-                ?? "claude-pid-\(proc.pid)"
+            let itemID: String = {
+                if let rexEntry {
+                    return "rex-block-\(rexEntry.location.blockID)"
+                }
+                if let meta {
+                    return "claude-\(meta.sessionID)-pid-\(proc.pid)"
+                }
+                if let ghosttyEntry {
+                    return "ghostty-term-\(ghosttyEntry.location.terminalID)-pid-\(proc.pid)"
+                }
+                return "claude-pid-\(proc.pid)"
+            }()
+            let en = AppLanguage.current == .english
 
             items.append(
                 AgentActivityItem(
@@ -2473,14 +2752,15 @@ final class AgentActivityTracker {
                     cwdPath: cwdPath,
                     title: sessionTitle,
                     status: status,
-                    isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? false,
-                    detail: status == .working
-                        ? (AppLanguage.current == .english ? "Running task" : "正在执行任务")
-                        : (AppLanguage.current == .english ? "Terminal idle" : "终端待命"),
+                    isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? ghosttyEntry?.isFocusedInActiveWindow ?? false,
+                    detail: status == .needsInput
+                        ? (en ? "Awaiting confirmation" : "等待确认")
+                        : (status == .working ? (en ? "Running task" : "正在执行任务") : (en ? "Terminal idle" : "终端待命")),
                     updatedAt: updatedAt,
                     pid: proc.pid,
-                    tty: proc.tty,
-                    rexPane: rexEntry?.location
+                    tty: proc.tty ?? ghosttyEntry?.ttyName,
+                    rexPane: rexEntry?.location,
+                    ghosttyPane: ghosttyEntry?.location
                 )
             )
         }
@@ -2597,7 +2877,8 @@ final class AgentActivityTracker {
     private nonisolated static func inspectCopilotSessions(
         home: URL,
         liveProcesses: [ProcessEntry],
-        rexMap: [Int32: RexBlockEntry]
+        rexMap: [Int32: RexBlockEntry],
+        ghosttyMap: [Int32: GhosttyTerminalEntry]
     ) -> [AgentActivityItem] {
         guard !liveProcesses.isEmpty else { return [] }
         var items: [AgentActivityItem] = []
@@ -2652,6 +2933,7 @@ final class AgentActivityTracker {
                 }
                 matchedPIDs.insert(proc.pid)
                 let rexEntry = rexMap[proc.pid]
+                let ghosttyEntry = rexEntry == nil ? ghosttyMap[proc.pid] : nil
 
                 let state = parseCopilotEventsTail(eventsURL)
                 let openInfo = openSessionMap[sid]
@@ -2665,13 +2947,27 @@ final class AgentActivityTracker {
                     } else {
                         status = inferred
                     }
+                } else if let ghosttyEntry {
+                    let inferred = ghosttyEntry.inferredStatus
+                    if inferred == .needsInput {
+                        status = .needsInput
+                    } else if (openInfo?.working == true) || state.inTurn || (proc.cpu > 3.5) || inferred == .working {
+                        status = .working
+                    } else {
+                        status = inferred
+                    }
                 } else {
                     let isWorking = (openInfo?.working == true) || state.inTurn || (proc.cpu > 3.5)
                     status = isWorking ? .working : .idle
                 }
                 let en = AppLanguage.current == .english
-                let sessionTitle = yamlTitle ?? rexEntry?.cleanTitle ?? state.lastUserMessage ?? (en ? "Copilot Session" : "Copilot 会话")
-                let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" } ?? "copilot-\(sid)-pid-\(proc.pid)"
+                let sessionTitle = yamlTitle
+                    ?? rexEntry?.cleanTitle
+                    ?? ghosttyEntry?.cleanTitle
+                    ?? state.lastUserMessage
+                    ?? (en ? "Copilot Session" : "Copilot 会话")
+                let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" }
+                    ?? "copilot-\(sid)-pid-\(proc.pid)"
                 items.append(
                     AgentActivityItem(
                         id: itemID,
@@ -2681,12 +2977,15 @@ final class AgentActivityTracker {
                         cwdPath: cwdPath,
                         title: sessionTitle,
                         status: status,
-                        isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? false,
-                        detail: status == .working ? (en ? "Running task" : "正在执行任务") : (en ? "Terminal idle" : "终端待命"),
+                        isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? ghosttyEntry?.isFocusedInActiveWindow ?? false,
+                        detail: status == .needsInput
+                            ? (en ? "Awaiting confirmation" : "等待确认")
+                            : (status == .working ? (en ? "Running task" : "正在执行任务") : (en ? "Terminal idle" : "终端待命")),
                         updatedAt: max(modDate, openInfo?.refreshedAt ?? modDate),
                         pid: proc.pid,
-                        tty: proc.tty,
-                        rexPane: rexEntry?.location
+                        tty: proc.tty ?? ghosttyEntry?.ttyName,
+                        rexPane: rexEntry?.location,
+                        ghosttyPane: ghosttyEntry?.location
                     )
                 )
             }
@@ -2695,22 +2994,37 @@ final class AgentActivityTracker {
         let en = AppLanguage.current == .english
         for proc in liveProcesses where !matchedPIDs.contains(proc.pid) {
             let rexEntry = rexMap[proc.pid]
-            let status: AgentTaskStatus = rexEntry?.inferredStatus ?? (proc.cpu > 3.5 ? .working : .idle)
-            let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" } ?? "copilot-pid-\(proc.pid)"
+            let ghosttyEntry = rexEntry == nil ? ghosttyMap[proc.pid] : nil
+            let status: AgentTaskStatus
+            if let rexEntry {
+                status = rexEntry.inferredStatus
+            } else if let ghosttyEntry {
+                let inferred = ghosttyEntry.inferredStatus
+                status = (proc.cpu > 3.5 && inferred == .idle) ? .working : inferred
+            } else {
+                status = proc.cpu > 3.5 ? .working : .idle
+            }
+            let effectiveCwd = !proc.cwdPath.isEmpty ? proc.cwdPath : (ghosttyEntry?.cwdPath ?? "")
+            let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" }
+                ?? ghosttyEntry.map { "ghostty-term-\($0.location.terminalID)-pid-\(proc.pid)" }
+                ?? "copilot-pid-\(proc.pid)"
             items.append(
                 AgentActivityItem(
                     id: itemID,
                     family: .copilot,
                     workspace: proc.workspaceName,
-                    cwdPath: proc.cwdPath,
-                    title: rexEntry?.cleanTitle ?? (en ? "Copilot Terminal Session" : "Copilot 终端会话"),
+                    cwdPath: effectiveCwd,
+                    title: rexEntry?.cleanTitle ?? ghosttyEntry?.cleanTitle ?? (en ? "Copilot Terminal Session" : "Copilot 终端会话"),
                     status: status,
-                    isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? false,
-                    detail: status == .working ? (en ? "Running task" : "正在执行任务") : (en ? "Terminal idle" : "终端待命"),
+                    isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? ghosttyEntry?.isFocusedInActiveWindow ?? false,
+                    detail: status == .needsInput
+                        ? (en ? "Awaiting confirmation" : "等待确认")
+                        : (status == .working ? (en ? "Running task" : "正在执行任务") : (en ? "Terminal idle" : "终端待命")),
                     updatedAt: syntheticTimestampSentinel,
                     pid: proc.pid,
-                    tty: proc.tty,
-                    rexPane: rexEntry?.location
+                    tty: proc.tty ?? ghosttyEntry?.ttyName,
+                    rexPane: rexEntry?.location,
+                    ghosttyPane: ghosttyEntry?.location
                 )
             )
         }
@@ -2767,7 +3081,8 @@ final class AgentActivityTracker {
     private nonisolated static func inspectAntigravitySessions(
         home: URL,
         liveProcesses: [ProcessEntry],
-        rexMap: [Int32: RexBlockEntry]
+        rexMap: [Int32: RexBlockEntry],
+        ghosttyMap: [Int32: GhosttyTerminalEntry]
     ) -> [AgentActivityItem] {
         guard !liveProcesses.isEmpty else { return [] }
         let logURL = home.appendingPathComponent(".gemini/antigravity-cli/cli.log")
@@ -2778,33 +3093,58 @@ final class AgentActivityTracker {
         var items: [AgentActivityItem] = []
         for proc in liveProcesses {
             let rexEntry = rexMap[proc.pid]
+            let ghosttyEntry = rexEntry == nil ? ghosttyMap[proc.pid] : nil
             let status: AgentTaskStatus
             if let rexStatus = rexEntry?.status {
                 status = rexStatus
             } else if let rexEntry {
                 status = logState.isPending ? .working : rexEntry.inferredStatus
+            } else if let ghosttyEntry {
+                let inferred = ghosttyEntry.inferredStatus
+                if inferred == .needsInput {
+                    status = .needsInput
+                } else if logState.isPending || proc.cpu > 3.5 || inferred == .working {
+                    status = .working
+                } else {
+                    status = inferred
+                }
             } else {
                 status = (logState.isPending || proc.cpu > 3.5) ? .working : .idle
             }
             let en = AppLanguage.current == .english
-            let workspace = proc.cwdPath.isEmpty ? (latestHistory.workspace ?? "Antigravity") : proc.workspaceName
-            let sessionTitle = latestHistory.title ?? rexEntry?.cleanTitle ?? logState.lastPrompt ?? (en ? "Antigravity Session" : "Antigravity 会话")
-            let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" } ?? "antigravity-pid-\(proc.pid)"
+            let effectiveCwd = !proc.cwdPath.isEmpty ? proc.cwdPath : (ghosttyEntry?.cwdPath ?? "")
+            let workspace = effectiveCwd.isEmpty
+                ? (latestHistory.workspace ?? "Antigravity")
+                : {
+                    let name = URL(fileURLWithPath: effectiveCwd).lastPathComponent
+                    return name.isEmpty || name == "/" ? proc.workspaceName : name
+                }()
+            let sessionTitle = latestHistory.title
+                ?? rexEntry?.cleanTitle
+                ?? ghosttyEntry?.cleanTitle
+                ?? logState.lastPrompt
+                ?? (en ? "Antigravity Session" : "Antigravity 会话")
+            let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" }
+                ?? ghosttyEntry.map { "ghostty-term-\($0.location.terminalID)-pid-\(proc.pid)" }
+                ?? "antigravity-pid-\(proc.pid)"
             items.append(
                 AgentActivityItem(
                     id: itemID,
                     sessionID: latestHistory.conversationID,
                     family: .antigravity,
                     workspace: workspace,
-                    cwdPath: proc.cwdPath,
+                    cwdPath: effectiveCwd,
                     title: sessionTitle,
                     status: status,
-                    isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? false,
-                    detail: status == .working ? (en ? "Generating response" : "正在生成响应") : (en ? "Terminal idle" : "终端待命"),
+                    isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? ghosttyEntry?.isFocusedInActiveWindow ?? false,
+                    detail: status == .needsInput
+                        ? (en ? "Awaiting confirmation" : "等待确认")
+                        : (status == .working ? (en ? "Generating response" : "正在生成响应") : (en ? "Terminal idle" : "终端待命")),
                     updatedAt: logState.modDate ?? syntheticTimestampSentinel,
                     pid: proc.pid,
-                    tty: proc.tty,
-                    rexPane: rexEntry?.location
+                    tty: proc.tty ?? ghosttyEntry?.ttyName,
+                    rexPane: rexEntry?.location,
+                    ghosttyPane: ghosttyEntry?.location
                 )
             )
         }
@@ -3234,6 +3574,442 @@ final class AgentActivityTracker {
         }
     }
 
+    nonisolated static func isRexBinaryAvailable() -> Bool {
+        resolveRexBinary(home: FileManager.default.homeDirectoryForCurrentUser) != nil
+    }
+
+    nonisolated static func isGhosttyAppInstalled() -> Bool {
+        ghosttyAppBundleURL() != nil
+    }
+
+    private nonisolated static func ghosttyAppBundleURL() -> URL? {
+        let candidates = [
+            "/Applications/Ghostty.app",
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Applications/Ghostty.app").path,
+        ]
+        for path in candidates where FileManager.default.fileExists(atPath: path) {
+            return URL(fileURLWithPath: path)
+        }
+        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.mitchellh.ghostty") {
+            return appURL
+        }
+        return nil
+    }
+
+    private nonisolated static func runningGhosttyApplication() -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first { app in
+            !app.isTerminated && (
+                app.bundleIdentifier?.lowercased() == "com.mitchellh.ghostty" ||
+                app.localizedName?.lowercased() == "ghostty"
+            )
+        }
+    }
+
+    private nonisolated static func isGhosttyFrontmostOrRecentlyActive() -> Bool {
+        guard let frontmost = NSWorkspace.shared.frontmostApplication else { return false }
+        let bundleID = frontmost.bundleIdentifier?.lowercased() ?? ""
+        let name = frontmost.localizedName?.lowercased() ?? ""
+        return bundleID == "com.mitchellh.ghostty" || name == "ghostty"
+    }
+
+    private struct GhosttyTerminalEntry: Sendable {
+        let location: GhosttyPaneLocation
+        let pid: Int32
+        let ttyName: String?
+        let cwdPath: String
+        let rawTitle: String?
+        let isFocusedInActiveWindow: Bool
+        let screenTail: String?
+        var isSSH: Bool = false
+        var sshPID: Int32? = nil
+        var sshTarget: String? = nil
+
+        var screenPrompts: [String] {
+            guard let tail = screenTail else { return [] }
+            var prompts: [String] = []
+            for rawLine in tail.split(separator: "\n") {
+                let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+                var candidate: String?
+                if trimmed.hasPrefix("› ") {
+                    candidate = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("❯ ") {
+                    candidate = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                }
+                if let candidate,
+                   !candidate.contains("Ask Codex to do anything"),
+                   candidate.range(of: "^\\d+\\.\\s", options: .regularExpression) == nil,
+                   !candidate.hasPrefix("Thought for "),
+                   let cleaned = cleanSessionTitle(candidate) {
+                    prompts.append(cleaned)
+                }
+            }
+            return prompts
+        }
+
+        var latestScreenPrompt: String? {
+            screenPrompts.last
+        }
+
+        var detectedFamily: AgentFamily? {
+            if let title = rawTitle {
+                let lowerTitle = title.lowercased()
+                if lowerTitle.contains("claude code") || lowerTitle.hasPrefix("✳ ") || lowerTitle.contains("claude") {
+                    return .claude
+                }
+                if lowerTitle.contains("codex") {
+                    return .codex
+                }
+                if lowerTitle.hasSuffix("- github copilot") || lowerTitle.contains("github copilot") || lowerTitle.contains("copilot") {
+                    return .copilot
+                }
+                if lowerTitle.contains("antigravity") {
+                    return .antigravity
+                }
+                if let firstScalar = title.unicodeScalars.first,
+                   (0x2800...0x28FF).contains(firstScalar.value) {
+                    return .codex
+                }
+            }
+            if let tail = screenTail {
+                let lowerTail = tail.lowercased()
+                if lowerTail.contains("claude code") { return .claude }
+                if lowerTail.contains("github copilot") || lowerTail.contains("tell copilot what to do") { return .copilot }
+                if lowerTail.contains("codex") { return .codex }
+                if lowerTail.contains("antigravity") { return .antigravity }
+            }
+            return nil
+        }
+
+        private var asRexLookalike: RexBlockEntry {
+            RexBlockEntry(
+                location: RexPaneLocation(sessionID: location.windowID, windowID: location.tabID, blockID: location.terminalID),
+                pid: pid,
+                processName: isSSH ? "ssh" : "",
+                cwdPath: cwdPath,
+                rawTitle: rawTitle,
+                reportedApp: nil,
+                status: nil,
+                screenMode: nil,
+                screenTail: screenTail,
+                screenPrompts: screenPrompts,
+                isFocusedInActiveWindow: isFocusedInActiveWindow,
+                isSSH: isSSH,
+                sshTarget: sshTarget
+            )
+        }
+
+        var inferredStatus: AgentTaskStatus {
+            asRexLookalike.inferredStatus
+        }
+
+        var cleanTitle: String? {
+            asRexLookalike.cleanTitle
+        }
+
+        var descriptiveTitle: String? {
+            asRexLookalike.descriptiveTitle
+        }
+
+        var contextPercentUsed: Int? {
+            asRexLookalike.contextPercentUsed
+        }
+
+        var remoteCwdPath: String? {
+            asRexLookalike.remoteCwdPath
+        }
+
+        var previewLines: [String] {
+            asRexLookalike.previewLines
+        }
+    }
+
+    private nonisolated static func queryGhosttyTerminals(
+        sshPIDsByTTY: [String: Int32] = [:],
+        ppidMap: [Int32: Int32] = [:]
+    ) -> [GhosttyTerminalEntry] {
+        // Zero-overhead pre-check: never trigger osascript if Ghostty is not currently running
+        guard let ghosttyApp = runningGhosttyApplication() else {
+            return []
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let appleScript = """
+        on cleanField(val)
+            try
+                if val is missing value then return ""
+                set s to val as text
+                set AppleScript's text item delimiters to {ASCII character 9, return, linefeed, "|||"}
+                set parts to text items of s
+                set AppleScript's text item delimiters to " "
+                set s to parts as text
+                set AppleScript's text item delimiters to ""
+                return s
+            on error
+                set AppleScript's text item delimiters to ""
+                return ""
+            end try
+        end cleanField
+
+        set sep to "|||"
+        tell application "Ghostty"
+            set outLines to {}
+            set frontWinId to ""
+            try
+                set frontWinId to my cleanField(id of front window)
+            end try
+            repeat with w in windows
+                try
+                    set winId to my cleanField(id of w)
+                    set selTabId to ""
+                    try
+                        set selTabId to my cleanField(id of (selected tab of w))
+                    end try
+                    set winTabs to {}
+                    try
+                        set winTabs to tabs of w
+                    end try
+                    if (count of winTabs) > 0 then
+                        repeat with t in winTabs
+                            try
+                                set tabId to my cleanField(id of t)
+                                set focTermId to ""
+                                try
+                                    set focTermId to my cleanField(id of (focused terminal of t))
+                                end try
+                                repeat with trm in terminals of t
+                                    try
+                                        set termId to my cleanField(id of trm)
+                                        set termPid to 0
+                                        try
+                                            set termPid to pid of trm
+                                        end try
+                                        set termTty to my cleanField(tty of trm)
+                                        set termCwd to my cleanField(working directory of trm)
+                                        set termName to my cleanField(name of trm)
+                                        set isFoc to "0"
+                                        if (winId is equal to frontWinId) and (tabId is equal to selTabId) and (termId is equal to focTermId) then
+                                            set isFoc to "1"
+                                        end if
+                                        set end of outLines to (winId & sep & tabId & sep & termId & sep & (termPid as text) & sep & termTty & sep & termCwd & sep & termName & sep & isFoc)
+                                    end try
+                                end repeat
+                            end try
+                        end repeat
+                    else
+                        repeat with trm in terminals of w
+                            try
+                                set termId to my cleanField(id of trm)
+                                set termPid to 0
+                                try
+                                    set termPid to pid of trm
+                                end try
+                                set termTty to my cleanField(tty of trm)
+                                set termCwd to my cleanField(working directory of trm)
+                                set termName to my cleanField(name of trm)
+                                set isFoc to "0"
+                                if winId is equal to frontWinId then set isFoc to "1"
+                                set end of outLines to (winId & sep & "" & sep & termId & sep & (termPid as text) & sep & termTty & sep & termCwd & sep & termName & sep & isFoc)
+                            end try
+                        end repeat
+                    end if
+                end try
+            end repeat
+            set AppleScript's text item delimiters to linefeed
+            set resText to outLines as text
+            set AppleScript's text item delimiters to ""
+            return resText
+        end tell
+        """
+
+        let execResult = runProcessWithTimeout(
+            executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+            arguments: ["-e", appleScript],
+            captureStdout: true,
+            timeoutSeconds: 1.5
+        )
+        guard execResult.succeeded,
+              let outputText = String(data: execResult.outputData, encoding: .utf8) else {
+            return DiscoveryCache.shared.cachedGhosttyTerminalsFallback(now: now, maxAge: 6.0) ?? []
+        }
+
+        let axFocusedTail = queryGhosttyAccessibilityScreenTail(appPID: ghosttyApp.processIdentifier)
+        let isGhosttyFront = isGhosttyFrontmostOrRecentlyActive()
+        var entries: [GhosttyTerminalEntry] = []
+
+        for rawLine in outputText.split(whereSeparator: \.isNewline) {
+            let fields = String(rawLine).components(separatedBy: "|||")
+            guard fields.count >= 8 else { continue }
+            let winID = fields[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let tabIDRaw = fields[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            let termID = fields[2].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !termID.isEmpty else { continue }
+            let pidVal = Int32(fields[3].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            let ttyPathRaw = fields[4].trimmingCharacters(in: .whitespacesAndNewlines)
+            let cwdRaw = fields[5].trimmingCharacters(in: .whitespacesAndNewlines)
+            let titleRaw = fields[6].trimmingCharacters(in: .whitespacesAndNewlines)
+            let isFocInGhostty = fields[7].trimmingCharacters(in: .whitespacesAndNewlines) == "1"
+
+            let ttyPath: String? = ttyPathRaw.isEmpty ? nil : ttyPathRaw
+            let ttyName: String? = {
+                guard let ttyPath, !ttyPath.isEmpty else { return nil }
+                let last = URL(fileURLWithPath: ttyPath).lastPathComponent
+                return last.isEmpty ? nil : last
+            }()
+
+            // Detect SSH process associated with this Ghostty terminal (by TTY or child PID)
+            var matchedSSHPID: Int32? = nil
+            if let ttyName, let sshPID = sshPIDsByTTY[ttyName] {
+                matchedSSHPID = sshPID
+            } else if pidVal > 1 {
+                for (_, sshPID) in sshPIDsByTTY {
+                    var cur = sshPID
+                    for _ in 0..<10 {
+                        guard cur > 1 else { break }
+                        if cur == pidVal {
+                            matchedSSHPID = sshPID
+                            break
+                        }
+                        let next = ppidMap[cur] ?? parentPID(of: cur)
+                        guard next > 1, next != cur else { break }
+                        cur = next
+                    }
+                    if matchedSSHPID != nil { break }
+                }
+            }
+
+            let sshTarget = matchedSSHPID.flatMap { extractSSHTarget(pid: $0) }
+            let location = GhosttyPaneLocation(
+                windowID: winID,
+                tabID: tabIDRaw.isEmpty ? nil : tabIDRaw,
+                terminalID: termID,
+                ttyPath: ttyPath
+            )
+            entries.append(
+                GhosttyTerminalEntry(
+                    location: location,
+                    pid: pidVal,
+                    ttyName: ttyName,
+                    cwdPath: cwdRaw,
+                    rawTitle: titleRaw.isEmpty ? nil : titleRaw,
+                    isFocusedInActiveWindow: isFocInGhostty && isGhosttyFront,
+                    screenTail: isFocInGhostty ? axFocusedTail : nil,
+                    isSSH: matchedSSHPID != nil,
+                    sshPID: matchedSSHPID,
+                    sshTarget: sshTarget
+                )
+            )
+        }
+
+        DiscoveryCache.shared.setCachedGhosttyTerminals(entries, now: ProcessInfo.processInfo.systemUptime)
+        return entries
+    }
+
+    private nonisolated static func queryGhosttyAccessibilityScreenTail(appPID: pid_t) -> String? {
+        guard appPID > 1, AXIsProcessTrusted() else { return nil }
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.045
+        let appElem = AXUIElementCreateApplication(appPID)
+        AXUIElementSetMessagingTimeout(appElem, 0.04)
+
+        func extractTextValue(from elem: AXUIElement) -> String? {
+            var valRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(elem, kAXValueAttribute as CFString, &valRef) == .success,
+               let str = valRef as? String {
+                let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.count >= 4 {
+                    return String(trimmed.suffix(1600))
+                }
+            }
+            return nil
+        }
+
+        var focusedRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appElem, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
+           let focusedRef,
+           CFGetTypeID(focusedRef) == AXUIElementGetTypeID() {
+            let focusedElem = unsafeDowncast(focusedRef, to: AXUIElement.self)
+            if let text = extractTextValue(from: focusedElem) {
+                return text
+            }
+        }
+
+        guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+        var windowRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElem, kAXFocusedWindowAttribute as CFString, &windowRef) == .success,
+              let windowRef,
+              CFGetTypeID(windowRef) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        let rootWin = unsafeDowncast(windowRef, to: AXUIElement.self)
+        var queue: [AXUIElement] = [rootWin]
+        var visited = 0
+
+        while !queue.isEmpty && visited < 32 && ProcessInfo.processInfo.systemUptime < deadline {
+            let current = queue.removeFirst()
+            visited += 1
+            if let text = extractTextValue(from: current) {
+                return text
+            }
+            var childrenRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(current, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+               let children = childrenRef as? [AXUIElement] {
+                queue.append(contentsOf: children.prefix(8))
+            }
+        }
+        return nil
+    }
+
+    private nonisolated static func matchGhosttyEntry(
+        for proc: ProcessEntry,
+        ppidMap: [Int32: Int32],
+        entries: [GhosttyTerminalEntry]
+    ) -> GhosttyTerminalEntry? {
+        guard !entries.isEmpty else { return nil }
+
+        // 1. Exact PID match
+        if let exact = entries.first(where: { $0.pid > 0 && $0.pid == proc.pid }) {
+            return exact
+        }
+
+        // 2. TTY match
+        if let procTTY = proc.tty, !procTTY.isEmpty {
+            if let byTTY = entries.first(where: { $0.ttyName == procTTY }) {
+                return byTTY
+            }
+        }
+
+        // 3. Parent-child process chain match (up to 10 levels)
+        var currentPID = proc.pid
+        for _ in 0..<10 {
+            let nextPPID = ppidMap[currentPID] ?? parentPID(of: currentPID)
+            guard nextPPID > 1, nextPPID != currentPID else { break }
+            if let ancestorMatch = entries.first(where: { $0.pid > 1 && $0.pid == nextPPID }) {
+                return ancestorMatch
+            }
+            currentPID = nextPPID
+        }
+
+        return nil
+    }
+
+    private nonisolated static func isDescendantOfGhostty(
+        pid startPID: Int32,
+        ghosttyAppPID: Int32?,
+        ppidMap: [Int32: Int32]
+    ) -> Bool {
+        guard let ghosttyAppPID, ghosttyAppPID > 1 else { return false }
+        var cur = startPID
+        for _ in 0..<12 {
+            guard cur > 1 else { break }
+            if cur == ghosttyAppPID {
+                return true
+            }
+            let next = ppidMap[cur] ?? parentPID(of: cur)
+            if next <= 1 || next == cur { break }
+            cur = next
+        }
+        return false
+    }
+
     private nonisolated static func resolveRexBinary(home: URL) -> URL? {
         let candidates = [
             home.appendingPathComponent("Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex").path,
@@ -3468,6 +4244,216 @@ final class AgentActivityTracker {
         }
     }
 
+    private nonisolated static func performJump(for item: AgentActivityItem) -> Bool {
+        if item.ghosttyPane != nil || item.terminalHost == .ghostty {
+            return performGhosttyJump(for: item)
+        }
+        return performRexJump(for: item)
+    }
+
+    private nonisolated static let ghosttyResolveTerminalAppleScriptPreamble = """
+        set targetWinId to item 1 of argv
+        set targetTabId to item 2 of argv
+        set targetTermId to item 3 of argv
+        set targetTty to item 4 of argv
+        set targetPid to (item 5 of argv) as integer
+
+        tell application "Ghostty"
+            set matchedWin to missing value
+            set matchedTab to missing value
+            set matchedTerm to missing value
+
+            -- Tier 1: match by windowID / tabID / terminalID
+            if targetTermId is not "" then
+                repeat with w in windows
+                    try
+                        if targetWinId is "" or (id of w as text) is equal to targetWinId then
+                            repeat with t in tabs of w
+                                try
+                                    if targetTabId is "" or (id of t as text) is equal to targetTabId then
+                                        repeat with trm in terminals of t
+                                            try
+                                                if (id of trm as text) is equal to targetTermId then
+                                                    set matchedWin to w
+                                                    set matchedTab to t
+                                                    set matchedTerm to trm
+                                                    exit repeat
+                                                end if
+                                            end try
+                                        end repeat
+                                    end if
+                                end try
+                                if matchedTerm is not missing value then exit repeat
+                            end repeat
+                        end if
+                    end try
+                    if matchedTerm is not missing value then exit repeat
+                end repeat
+
+                if matchedTerm is missing value then
+                    repeat with w in windows
+                        try
+                            repeat with t in tabs of w
+                                try
+                                    repeat with trm in terminals of t
+                                        try
+                                            if (id of trm as text) is equal to targetTermId then
+                                                set matchedWin to w
+                                                set matchedTab to t
+                                                set matchedTerm to trm
+                                                exit repeat
+                                            end if
+                                        end try
+                                    end repeat
+                                end try
+                                if matchedTerm is not missing value then exit repeat
+                            end repeat
+                            if matchedTerm is missing value then
+                                repeat with trm in terminals of w
+                                    try
+                                        if (id of trm as text) is equal to targetTermId then
+                                            set matchedWin to w
+                                            set matchedTerm to trm
+                                            exit repeat
+                                        end if
+                                    end try
+                                end repeat
+                            end if
+                        end try
+                        if matchedTerm is not missing value then exit repeat
+                    end repeat
+                end if
+            end if
+
+            -- Tier 2: fallback match by TTY device path or foreground/shell PID
+            if matchedTerm is missing value then
+                repeat with w in windows
+                    try
+                        repeat with t in tabs of w
+                            try
+                                repeat with trm in terminals of t
+                                    try
+                                        set trmTty to ""
+                                        try
+                                            set trmTty to (tty of trm as text)
+                                        end try
+                                        set trmPid to -1
+                                        try
+                                            set trmPid to (pid of trm as integer)
+                                        end try
+                                        if (targetTty is not "" and trmTty is equal to targetTty) or (targetPid > 0 and trmPid is equal to targetPid) then
+                                            set matchedWin to w
+                                            set matchedTab to t
+                                            set matchedTerm to trm
+                                            exit repeat
+                                        end if
+                                    end try
+                                end repeat
+                            end try
+                            if matchedTerm is not missing value then exit repeat
+                        end repeat
+                        if matchedTerm is missing value then
+                            repeat with trm in terminals of w
+                                try
+                                    set trmTty to ""
+                                    try
+                                        set trmTty to (tty of trm as text)
+                                    end try
+                                    set trmPid to -1
+                                    try
+                                        set trmPid to (pid of trm as integer)
+                                    end try
+                                    if (targetTty is not "" and trmTty is equal to targetTty) or (targetPid > 0 and trmPid is equal to targetPid) then
+                                        set matchedWin to w
+                                        set matchedTerm to trm
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                        end if
+                    end try
+                    if matchedTerm is not missing value then exit repeat
+                end repeat
+            end if
+    """
+
+    private nonisolated static func ghosttyLookupArgs(for item: AgentActivityItem) -> [String] {
+        let winID = item.ghosttyPane?.windowID ?? ""
+        let tabID = item.ghosttyPane?.tabID ?? ""
+        let termID = item.ghosttyPane?.terminalID ?? ""
+        let ttyPath: String = {
+            if let path = item.ghosttyPane?.ttyPath, !path.isEmpty {
+                return path.hasPrefix("/dev/") ? path : "/dev/\(path)"
+            }
+            if let tty = item.tty, !tty.isEmpty {
+                return tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+            }
+            return ""
+        }()
+        let pidStr = "\(item.pid ?? -1)"
+        return [winID, tabID, termID, ttyPath, pidStr]
+    }
+
+    private nonisolated static func resolvedLocalTTYName(for item: AgentActivityItem) -> String? {
+        if let tty = item.tty?.trimmingCharacters(in: .whitespacesAndNewlines), !tty.isEmpty {
+            return URL(fileURLWithPath: tty).lastPathComponent
+        }
+        if let ttyPath = item.ghosttyPane?.ttyPath?.trimmingCharacters(in: .whitespacesAndNewlines), !ttyPath.isEmpty {
+            let last = URL(fileURLWithPath: ttyPath).lastPathComponent
+            return last.isEmpty ? nil : last
+        }
+        return nil
+    }
+
+    private nonisolated static func performGhosttyJump(for item: AgentActivityItem) -> Bool {
+        dismissMenuBarPanelWindows()
+        var scriptMatched = false
+
+        if runningGhosttyApplication() != nil {
+            let script = """
+            on run argv
+            \(ghosttyResolveTerminalAppleScriptPreamble)
+                    if matchedWin is not missing value then
+                        try
+                            activate window matchedWin
+                        end try
+                    end if
+                    if matchedTab is not missing value then
+                        try
+                            select tab matchedTab
+                        end try
+                    end if
+                    if matchedTerm is not missing value then
+                        try
+                            focus matchedTerm
+                        end try
+                    end if
+                    activate
+                    if matchedTerm is not missing value then
+                        return "OK"
+                    end if
+                end tell
+                return "MISS"
+            end run
+            """
+            let execResult = runProcessWithTimeout(
+                executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+                arguments: ["-e", script] + ghosttyLookupArgs(for: item),
+                captureStdout: true,
+                timeoutSeconds: 2.0
+            )
+            if execResult.succeeded,
+               let out = String(data: execResult.outputData, encoding: .utf8),
+               out.contains("OK") {
+                scriptMatched = true
+            }
+        }
+
+        // Tier 3 fallback: always activate Ghostty application via NSRunningApplication
+        let activated = activateGhosttyApp()
+        return scriptMatched || activated
+    }
+
     private nonisolated static func performRexJump(for item: AgentActivityItem) -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
         dismissMenuBarPanelWindows()
@@ -3605,6 +4591,9 @@ final class AgentActivityTracker {
     }
 
     private nonisolated static func performCloseSession(for item: AgentActivityItem) -> Bool {
+        if item.ghosttyPane != nil || item.terminalHost == .ghostty {
+            return performGhosttyCloseSession(for: item)
+        }
         let home = FileManager.default.homeDirectoryForCurrentUser
         var closedInRex = false
 
@@ -3645,6 +4634,128 @@ final class AgentActivityTracker {
         }
 
         return closedInRex || killedProcess
+    }
+
+    private nonisolated static func performGhosttyCloseSession(for item: AgentActivityItem) -> Bool {
+        var closedInGhostty = false
+        if runningGhosttyApplication() != nil {
+            let script = """
+            on run argv
+            \(ghosttyResolveTerminalAppleScriptPreamble)
+                    if matchedTerm is not missing value then
+                        close matchedTerm
+                        return "OK"
+                    end if
+                end tell
+                return "MISS"
+            end run
+            """
+            let execResult = runProcessWithTimeout(
+                executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+                arguments: ["-e", script] + ghosttyLookupArgs(for: item),
+                captureStdout: true,
+                timeoutSeconds: 2.0
+            )
+            if execResult.succeeded,
+               let out = String(data: execResult.outputData, encoding: .utf8),
+               out.contains("OK") {
+                closedInGhostty = true
+            }
+        }
+
+        var killedProcess = false
+        if let pid = item.pid, pid > 1 {
+            killedProcess = (Darwin.kill(pid, SIGTERM) == 0)
+        }
+
+        return closedInGhostty || killedProcess
+    }
+
+    private nonisolated static func performApprovalWrite(for item: AgentActivityItem, choice: AgentApprovalChoice) -> Bool {
+        if item.ghosttyPane != nil || item.terminalHost == .ghostty {
+            return performGhosttyApprovalWrite(for: item, choice: choice)
+        }
+        return performRexApprovalWrite(for: item, choice: choice)
+    }
+
+    private nonisolated static func performGhosttyApprovalWrite(for item: AgentActivityItem, choice: AgentApprovalChoice) -> Bool {
+        let combinedPreview = item.terminalPreviewLines.joined(separator: "\n").lowercased()
+        let isPlainYN = combinedPreview.contains("[y/n]") || combinedPreview.contains("(y/n)")
+        let hasNumberedDenyOption3 = combinedPreview.contains("3. no") || combinedPreview.contains("3. cancel") || combinedPreview.contains("3. reject")
+        let hasNumberedDenyOption2 = combinedPreview.contains("2. no") || combinedPreview.contains("2. cancel") || combinedPreview.contains("2. reject")
+
+        let textOption: String? = {
+            switch choice {
+            case .approvePrimary:
+                return isPlainYN ? "y" : "1"
+            case .approveSecondary:
+                return isPlainYN ? "y" : "2"
+            case .deny:
+                if isPlainYN {
+                    return "n"
+                } else if hasNumberedDenyOption3 {
+                    return "3"
+                } else if hasNumberedDenyOption2 {
+                    return "2"
+                } else {
+                    return nil
+                }
+            }
+        }()
+
+        // Tier 1: Ghostty AppleScript `input text` + `send key "enter"` or `send key "escape"`
+        if runningGhosttyApplication() != nil {
+            let script: String
+            let extraArgs: [String]
+            if let textOption {
+                script = """
+                on run argv
+                    set replyVal to item 6 of argv
+                \(ghosttyResolveTerminalAppleScriptPreamble)
+                        if matchedTerm is not missing value then
+                            input text replyVal to matchedTerm
+                            send key "enter" to matchedTerm
+                            return "OK"
+                        end if
+                    end tell
+                    return "MISS"
+                end run
+                """
+                extraArgs = [textOption]
+            } else {
+                script = """
+                on run argv
+                \(ghosttyResolveTerminalAppleScriptPreamble)
+                        if matchedTerm is not missing value then
+                            send key "escape" to matchedTerm
+                            return "OK"
+                        end if
+                    end tell
+                    return "MISS"
+                end run
+                """
+                extraArgs = []
+            }
+
+            let execResult = runProcessWithTimeout(
+                executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+                arguments: ["-e", script] + ghosttyLookupArgs(for: item) + extraArgs,
+                captureStdout: true,
+                timeoutSeconds: 2.0
+            )
+            if execResult.succeeded,
+               let out = String(data: execResult.outputData, encoding: .utf8),
+               out.contains("OK") {
+                return true
+            }
+        }
+
+        // Tier 2 fallback: direct local TTY write
+        if item.sshTarget == nil, let tty = resolvedLocalTTYName(for: item) {
+            let rawPayload = textOption.map { "\($0)\r" } ?? "\u{1B}"
+            return writeToLocalTTY(ttyName: tty, data: Data(rawPayload.utf8))
+        }
+        return false
     }
 
     private nonisolated static func performRexApprovalWrite(for item: AgentActivityItem, choice: AgentApprovalChoice) -> Bool {
@@ -3715,6 +4826,53 @@ final class AgentActivityTracker {
         return false
     }
 
+    private nonisolated static func performPromptWrite(for item: AgentActivityItem, text: String) -> Bool {
+        if item.ghosttyPane != nil || item.terminalHost == .ghostty {
+            return performGhosttyPromptWrite(for: item, text: text)
+        }
+        return performRexPromptWrite(for: item, text: text)
+    }
+
+    private nonisolated static func performGhosttyPromptWrite(for item: AgentActivityItem, text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        // Tier 1: Ghostty AppleScript `input text` + `send key "enter"`
+        if runningGhosttyApplication() != nil {
+            let script = """
+            on run argv
+                set promptText to item 6 of argv
+            \(ghosttyResolveTerminalAppleScriptPreamble)
+                    if matchedTerm is not missing value then
+                        input text promptText to matchedTerm
+                        delay 0.05
+                        send key "enter" to matchedTerm
+                        return "OK"
+                    end if
+                end tell
+                return "MISS"
+            end run
+            """
+            let execResult = runProcessWithTimeout(
+                executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+                arguments: ["-e", script] + ghosttyLookupArgs(for: item) + [trimmed],
+                captureStdout: true,
+                timeoutSeconds: 2.0
+            )
+            if execResult.succeeded,
+               let out = String(data: execResult.outputData, encoding: .utf8),
+               out.contains("OK") {
+                return true
+            }
+        }
+
+        // Tier 2 fallback: direct local TTY write
+        if item.sshTarget == nil, let tty = resolvedLocalTTYName(for: item) {
+            return writeToLocalTTY(ttyName: tty, data: Data((trimmed + "\r").utf8))
+        }
+        return false
+    }
+
     private nonisolated static func performRexPromptWrite(for item: AgentActivityItem, text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
@@ -3767,6 +4925,55 @@ final class AgentActivityTracker {
 
         if item.sshTarget == nil, let tty = item.tty, !tty.isEmpty {
             return writeToLocalTTY(ttyName: tty, data: Data((trimmed + "\r").utf8))
+        }
+        return false
+    }
+
+    private nonisolated static func performInterrupt(for item: AgentActivityItem) -> Bool {
+        if item.ghosttyPane != nil || item.terminalHost == .ghostty {
+            return performGhosttyInterrupt(for: item)
+        }
+        return performRexInterrupt(for: item)
+    }
+
+    private nonisolated static func performGhosttyInterrupt(for item: AgentActivityItem) -> Bool {
+        // Tier 1: Ghostty AppleScript `send key "escape"` + `send key "c" modifiers "control"`
+        if runningGhosttyApplication() != nil {
+            let script = """
+            on run argv
+            \(ghosttyResolveTerminalAppleScriptPreamble)
+                    if matchedTerm is not missing value then
+                        send key "escape" to matchedTerm
+                        delay 0.05
+                        send key "c" modifiers "control" to matchedTerm
+                        return "OK"
+                    end if
+                end tell
+                return "MISS"
+            end run
+            """
+            let execResult = runProcessWithTimeout(
+                executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+                arguments: ["-e", script] + ghosttyLookupArgs(for: item),
+                captureStdout: true,
+                timeoutSeconds: 2.0
+            )
+            if execResult.succeeded,
+               let out = String(data: execResult.outputData, encoding: .utf8),
+               out.contains("OK") {
+                return true
+            }
+        }
+
+        // Tier 2 fallback: direct local TTY write of Esc + ^C
+        if item.sshTarget == nil, let tty = resolvedLocalTTYName(for: item),
+           writeToLocalTTY(ttyName: tty, data: Data("\u{1B}\u{03}".utf8)) {
+            return true
+        }
+
+        // Tier 3 fallback: SIGINT to process
+        if let pid = item.pid, pid > 1, Darwin.kill(pid, SIGINT) == 0 {
+            return true
         }
         return false
     }
@@ -4634,6 +5841,285 @@ final class AgentActivityTracker {
         return results
     }
 
+    private nonisolated static func performLaunch(
+        family: AgentFamily,
+        cwdPath: String,
+        customCommand: String,
+        preferredTabTitle: String? = nil,
+        preferredHost: TerminalHostKind = .rex
+    ) -> Bool {
+        if preferredHost == .ghostty {
+            if performGhosttyLaunch(
+                family: family,
+                cwdPath: cwdPath,
+                customCommand: customCommand,
+                preferredTabTitle: preferredTabTitle
+            ) {
+                return true
+            }
+            return performRexLaunch(
+                family: family,
+                cwdPath: cwdPath,
+                customCommand: customCommand,
+                preferredTabTitle: preferredTabTitle
+            )
+        } else {
+            if performRexLaunch(
+                family: family,
+                cwdPath: cwdPath,
+                customCommand: customCommand,
+                preferredTabTitle: preferredTabTitle
+            ) {
+                return true
+            }
+            return performGhosttyLaunch(
+                family: family,
+                cwdPath: cwdPath,
+                customCommand: customCommand,
+                preferredTabTitle: preferredTabTitle
+            )
+        }
+    }
+
+    private nonisolated static func performSSHLaunch(
+        family: AgentFamily,
+        sshTarget: String,
+        remotePath: String,
+        customCommand: String,
+        preferredHost: TerminalHostKind = .rex
+    ) -> Bool {
+        if preferredHost == .ghostty {
+            if performGhosttySSHLaunch(
+                family: family,
+                sshTarget: sshTarget,
+                remotePath: remotePath,
+                customCommand: customCommand
+            ) {
+                return true
+            }
+            return performRexSSHLaunch(
+                family: family,
+                sshTarget: sshTarget,
+                remotePath: remotePath,
+                customCommand: customCommand
+            )
+        } else {
+            if performRexSSHLaunch(
+                family: family,
+                sshTarget: sshTarget,
+                remotePath: remotePath,
+                customCommand: customCommand
+            ) {
+                return true
+            }
+            return performGhosttySSHLaunch(
+                family: family,
+                sshTarget: sshTarget,
+                remotePath: remotePath,
+                customCommand: customCommand
+            )
+        }
+    }
+
+    private nonisolated static func performGhosttyLaunch(
+        family: AgentFamily,
+        cwdPath: String,
+        customCommand: String,
+        preferredTabTitle: String? = nil
+    ) -> Bool {
+        guard let appBundleURL = ghosttyAppBundleURL() else { return false }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        dismissMenuBarPanelWindows()
+
+        let resolvedCwd: String = {
+            let trimmed = cwdPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return home.path }
+            let expanded = (trimmed as NSString).expandingTildeInPath
+            let candidate = URL(fileURLWithPath: expanded).standardizedFileURL.path
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir), isDir.boolValue {
+                return candidate
+            }
+            return home.path
+        }()
+        let dirName = URL(fileURLWithPath: resolvedCwd).lastPathComponent
+        let tabLabel: String = {
+            if let preferredTabTitle = preferredTabTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !preferredTabTitle.isEmpty {
+                let shortTitle = preferredTabTitle.count > 26
+                    ? String(preferredTabTitle.prefix(26)) + "…"
+                    : preferredTabTitle
+                return "\(family.shortName) · \(shortTitle)"
+            }
+            return dirName.isEmpty || dirName == "/" ? family.shortName : "\(family.shortName) · \(dirName)"
+        }()
+        let trimmedCmd = customCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveCmd = trimmedCmd.isEmpty ? family.defaultLaunchCommand : trimmedCmd
+        let cmdLine = "\(effectiveCmd)\n"
+
+        // Tier 1: Native Ghostty AppleScript `new surface configuration`
+        let appleScript = """
+        on run argv
+            set targetCwd to item 1 of argv
+            set targetInput to item 2 of argv
+            set targetTitle to item 3 of argv
+            tell application "Ghostty"
+                activate
+                set cfg to new surface configuration
+                set initial working directory of cfg to targetCwd
+                set initial input of cfg to targetInput
+                if (count of windows) > 0 then
+                    set newTab to new tab in front window with configuration cfg
+                    try
+                        set name override of newTab to targetTitle
+                    end try
+                else
+                    set newWin to new window with configuration cfg
+                    try
+                        set name override of (selected tab of newWin) to targetTitle
+                    end try
+                end if
+            end tell
+            return "OK"
+        end run
+        """
+
+        let scriptResult = runProcessWithTimeout(
+            executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+            arguments: ["-e", appleScript, resolvedCwd, cmdLine, tabLabel],
+            captureStdout: true,
+            timeoutSeconds: 3.0
+        )
+        if scriptResult.succeeded {
+            _ = activateGhosttyApp()
+            return true
+        }
+
+        // Tier 2 fallback: launch Ghostty via `/usr/bin/open -na` with `--working-directory` and interactive shell
+        let fallbackShellPayload = "\(effectiveCmd); exec ${SHELL:-/bin/zsh} -l"
+        let openResult = runProcessWithTimeout(
+            executableURL: URL(fileURLWithPath: "/usr/bin/open"),
+            arguments: [
+                "-na", appBundleURL.path,
+                "--args",
+                "--working-directory=\(resolvedCwd)",
+                "-e", "/bin/zsh", "-lic", fallbackShellPayload,
+            ],
+            captureStdout: false,
+            timeoutSeconds: 3.0
+        )
+        if openResult.succeeded {
+            _ = activateGhosttyApp()
+            return true
+        }
+        return false
+    }
+
+    private nonisolated static func performGhosttySSHLaunch(
+        family: AgentFamily,
+        sshTarget: String,
+        remotePath: String,
+        customCommand: String
+    ) -> Bool {
+        guard let appBundleURL = ghosttyAppBundleURL() else { return false }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        dismissMenuBarPanelWindows()
+
+        let cleanHost = sshTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanHost.isEmpty else { return false }
+
+        let trimmedPath = remotePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dirSuffix: String = {
+            if trimmedPath.isEmpty || trimmedPath == "~" || trimmedPath == "/" {
+                return cleanHost
+            }
+            let lastComp = URL(fileURLWithPath: trimmedPath).lastPathComponent
+            return lastComp.isEmpty ? cleanHost : "\(cleanHost) · \(lastComp)"
+        }()
+        let tabLabel = "\(family.shortName) · \(dirSuffix)"
+
+        let trimmedCmd = customCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveCmd = trimmedCmd.isEmpty ? family.defaultLaunchCommand : trimmedCmd
+
+        let cdClause: String = {
+            if trimmedPath.isEmpty || trimmedPath == "~" {
+                return ""
+            }
+            if trimmedPath.hasPrefix("~/") {
+                let rel = String(trimmedPath.dropFirst(2))
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\"", with: "\\\"")
+                return "cd \"$HOME/\(rel)\" && "
+            }
+            let esc = trimmedPath
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            return "cd \"\(esc)\" && "
+        }()
+
+        let escapedSingleQuotesCmd = effectiveCmd.replacingOccurrences(of: "'", with: "'\\''")
+        let remoteShellPayload = "\(cdClause)exec \\$SHELL -lic '\(escapedSingleQuotesCmd)'"
+        let sshCommand = "ssh -t \(cleanHost) \"\(remoteShellPayload)\""
+        let sshCommandLine = "\(sshCommand)\n"
+
+        // Tier 1: Native Ghostty AppleScript `new surface configuration`
+        let appleScript = """
+        on run argv
+            set targetCwd to item 1 of argv
+            set targetInput to item 2 of argv
+            set targetTitle to item 3 of argv
+            tell application "Ghostty"
+                activate
+                set cfg to new surface configuration
+                set initial working directory of cfg to targetCwd
+                set initial input of cfg to targetInput
+                if (count of windows) > 0 then
+                    set newTab to new tab in front window with configuration cfg
+                    try
+                        set name override of newTab to targetTitle
+                    end try
+                else
+                    set newWin to new window with configuration cfg
+                    try
+                        set name override of (selected tab of newWin) to targetTitle
+                    end try
+                end if
+            end tell
+            return "OK"
+        end run
+        """
+
+        let scriptResult = runProcessWithTimeout(
+            executableURL: URL(fileURLWithPath: "/usr/bin/osascript"),
+            arguments: ["-e", appleScript, home.path, sshCommandLine, tabLabel],
+            captureStdout: true,
+            timeoutSeconds: 3.0
+        )
+        if scriptResult.succeeded {
+            _ = activateGhosttyApp()
+            return true
+        }
+
+        // Tier 2 fallback: launch Ghostty via `/usr/bin/open -na`
+        let fallbackShellPayload = "\(sshCommand); exec ${SHELL:-/bin/zsh} -l"
+        let openResult = runProcessWithTimeout(
+            executableURL: URL(fileURLWithPath: "/usr/bin/open"),
+            arguments: [
+                "-na", appBundleURL.path,
+                "--args",
+                "--working-directory=\(home.path)",
+                "-e", "/bin/zsh", "-lic", fallbackShellPayload,
+            ],
+            captureStdout: false,
+            timeoutSeconds: 3.0
+        )
+        if openResult.succeeded {
+            _ = activateGhosttyApp()
+            return true
+        }
+        return false
+    }
+
     private nonisolated static func performRexLaunch(
         family: AgentFamily,
         cwdPath: String,
@@ -4976,5 +6462,154 @@ final class AgentActivityTracker {
             }
         }
         return false
+    }
+
+    private nonisolated static func activateGhosttyApp() -> Bool {
+        if let app = runningGhosttyApplication() {
+            DispatchQueue.main.async {
+                NSApplication.shared.deactivate()
+                app.activate(options: [.activateAllWindows])
+            }
+            return true
+        }
+        return false
+    }
+
+    nonisolated static func runGhosttySelfTest() -> Bool {
+        let entries: [GhosttyTerminalEntry] = [
+            GhosttyTerminalEntry(
+                location: GhosttyPaneLocation(windowID: "win-1", tabID: "tab-1", terminalID: "term-pid", ttyPath: "/dev/ttys091"),
+                pid: 42001,
+                ttyName: "ttys091",
+                cwdPath: "/Users/yyc/code/AgentMeter",
+                rawTitle: "✳ Fix Ghostty jump - Claude Code",
+                isFocusedInActiveWindow: true,
+                screenTail: "⏺ Bash(swift build)\nDo you want to run this command?\n❯ 1. Yes, allow\n  2. Always\n  3. No, cancel (Esc)"
+            ),
+            GhosttyTerminalEntry(
+                location: GhosttyPaneLocation(windowID: "win-1", tabID: "tab-2", terminalID: "term-tty", ttyPath: "/dev/ttys092"),
+                pid: 42000,
+                ttyName: "ttys092",
+                cwdPath: "/Users/yyc/code/AgentMeter",
+                rawTitle: "Codex CLI",
+                isFocusedInActiveWindow: false,
+                screenTail: "› Optimize scheduler\n· Working · ~/code/AgentMeter · Context 35% used"
+            ),
+            GhosttyTerminalEntry(
+                location: GhosttyPaneLocation(windowID: "win-2", tabID: "tab-3", terminalID: "term-ppid", ttyPath: "/dev/ttys093"),
+                pid: 42010,
+                ttyName: "ttys093",
+                cwdPath: "/Users/yyc/code/AgentMeter",
+                rawTitle: "user@gpu-box:~/remote-repo - GitHub Copilot",
+                isFocusedInActiveWindow: false,
+                screenTail: "· Ready · ~/remote-repo · (18% used)",
+                isSSH: true,
+                sshPID: 42011,
+                sshTarget: "gpu-box"
+            ),
+        ]
+
+        let ppidMap: [Int32: Int32] = [
+            42015: 42014,
+            42014: 42013,
+            42013: 42012,
+            42012: 42010,
+        ]
+
+        let procByPID = ProcessEntry(pid: 42001, ppid: 40000, tty: nil, family: .claude, cpu: 1.0, cwdPath: "/Users/yyc/code/AgentMeter")
+        let procByTTY = ProcessEntry(pid: 42005, ppid: 40000, tty: "ttys092", family: .codex, cpu: 4.2, cwdPath: "/Users/yyc/code/AgentMeter")
+        let procByPPID = ProcessEntry(pid: 42015, ppid: 42014, tty: nil, family: .copilot, cpu: 0.2, cwdPath: "/Users/yyc/code/AgentMeter")
+
+        let m1 = matchGhosttyEntry(for: procByPID, ppidMap: ppidMap, entries: entries)
+        let m2 = matchGhosttyEntry(for: procByTTY, ppidMap: ppidMap, entries: entries)
+        let m3 = matchGhosttyEntry(for: procByPPID, ppidMap: ppidMap, entries: entries)
+        let matchOK = (m1?.location.terminalID == "term-pid")
+            && (m2?.location.terminalID == "term-tty")
+            && (m3?.location.terminalID == "term-ppid")
+
+        let parseOK = (entries[0].detectedFamily == .claude && entries[0].inferredStatus == .needsInput && entries[0].cleanTitle == "Fix Ghostty jump")
+            && (entries[1].detectedFamily == .codex && entries[1].inferredStatus == .working && entries[1].contextPercentUsed == 35)
+            && (entries[2].detectedFamily == .copilot && entries[2].remoteCwdPath == "~/remote-repo" && entries[2].contextPercentUsed == 18)
+
+        // Verify PTY fallback for Ghostty prompt write, approval write, and interrupt
+        var masterFD: Int32 = -1
+        var slaveFD: Int32 = -1
+        var ttyPathBuf = [CChar](repeating: 0, count: Int(PATH_MAX))
+        var ptyFallbackOK = false
+        if openpty(&masterFD, &slaveFD, &ttyPathBuf, nil, nil) == 0 {
+            defer {
+                if masterFD >= 0 { _ = Darwin.close(masterFD) }
+                if slaveFD >= 0 { _ = Darwin.close(slaveFD) }
+            }
+            let flags = fcntl(masterFD, F_GETFL, 0)
+            _ = fcntl(masterFD, F_SETFL, flags | O_NONBLOCK)
+            let ptyPath = ttyPathBuf.withUnsafeBufferPointer { buf -> String in
+                guard let base = buf.baseAddress else { return "" }
+                return String(cString: base)
+            }
+            let ptyName = URL(fileURLWithPath: ptyPath).lastPathComponent
+            let dummyItem = AgentActivityItem(
+                id: "test-ghostty-pty",
+                family: .claude,
+                workspace: "AgentMeter",
+                cwdPath: "/Users/yyc/code/AgentMeter",
+                title: "PTY Fallback Test",
+                status: .needsInput,
+                updatedAt: Date(),
+                pid: nil,
+                tty: ptyName,
+                rexPane: nil,
+                ghosttyPane: GhosttyPaneLocation(
+                    windowID: "nonexistent-win-999",
+                    tabID: "nonexistent-tab-999",
+                    terminalID: "nonexistent-term-999",
+                    ttyPath: ptyPath
+                ),
+                terminalPreviewLines: [
+                    "Do you want to run this command?",
+                    "1. Yes, allow",
+                    "2. Always",
+                    "3. No, cancel",
+                ]
+            )
+
+            func readAvailable(fd: Int32) -> Data {
+                var out = Data()
+                var buf = [UInt8](repeating: 0, count: 256)
+                while true {
+                    let n = Darwin.read(fd, &buf, buf.count)
+                    if n > 0 {
+                        out.append(contentsOf: buf.prefix(n))
+                    } else {
+                        break
+                    }
+                }
+                return out
+            }
+
+            let promptOK = performPromptWrite(for: dummyItem, text: "ping")
+            let promptBytes = readAvailable(fd: masterFD)
+            let approveOK = performApprovalWrite(for: dummyItem, choice: .approvePrimary)
+            let approveBytes = readAvailable(fd: masterFD)
+            let interruptOK = performInterrupt(for: dummyItem)
+            let interruptBytes = readAvailable(fd: masterFD)
+
+            ptyFallbackOK = promptOK
+                && approveOK
+                && interruptOK
+                && !promptBytes.isEmpty
+                && !approveBytes.isEmpty
+                && !interruptBytes.isEmpty
+        }
+
+        let start = ProcessInfo.processInfo.systemUptime
+        let liveEntries = queryGhosttyTerminals()
+        let elapsedMs = Int((ProcessInfo.processInfo.systemUptime - start) * 1000)
+
+        print("TEST_GHOSTTY_MATCH | success=\(matchOK) | pid_match=\(m1?.location.terminalID ?? "-") | tty_match=\(m2?.location.terminalID ?? "-") | ppid_match=\(m3?.location.terminalID ?? "-")")
+        print("TEST_GHOSTTY_PARSE | success=\(parseOK) | claude_status=\(entries[0].inferredStatus.rawValue) | codex_ctx=\(entries[1].contextPercentUsed ?? -1) | ssh_cwd=\(entries[2].remoteCwdPath ?? "-")")
+        print("TEST_GHOSTTY_FALLBACK | success=\(ptyFallbackOK)")
+        print("TEST_GHOSTTY_DISCOVERY | installed=\(isGhosttyAppInstalled()) | running=\(runningGhosttyApplication() != nil) | entries=\(liveEntries.count) | elapsed_ms=\(elapsedMs)")
+        return matchOK && parseOK && ptyFallbackOK
     }
 }

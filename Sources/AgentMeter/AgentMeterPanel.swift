@@ -65,6 +65,7 @@ struct AgentMeterPanel: View {
     @State private var selectedAgentID: String?
     @State private var selectedHistoryID: String?
     @State private var selectedWorkspacePath: String?
+    @State private var isKeyboardNavigationActive = false
     @State private var scrollTargetID: String?
     @State private var replyDrafts: [String: String] = [:]
     @State private var expandedReplyAgentID: String?
@@ -95,13 +96,18 @@ struct AgentMeterPanel: View {
 
         VStack(alignment: .leading, spacing: 0) {
             header(dark: dark)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
+                .background(FlatPalette.chromeBackground(dark: dark))
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(FlatPalette.hairlineBorder(dark: dark))
+                        .frame(height: 1)
+                }
 
             ScrollViewReader { scrollProxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 12) {
                         if showingSettings {
                             AgentMeterSettings(model: model)
                                 .transition(.opacity)
@@ -116,12 +122,14 @@ struct AgentMeterPanel: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
+                    .padding(.top, 10)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 12)
                     .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22), value: model.agentActivities)
                     .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20), value: selectedFilter)
                 }
-                .scrollIndicators(.automatic)
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.always)
                 .defaultScrollAnchor(.top)
                 .onChange(of: scrollTargetID) { _, targetID in
                     guard let targetID else { return }
@@ -132,8 +140,14 @@ struct AgentMeterPanel: View {
             }
 
             footer(dark: dark)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(FlatPalette.chromeBackground(dark: dark))
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(FlatPalette.hairlineBorder(dark: dark))
+                        .frame(height: 1)
+                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .modifier(FlatPanelSurface())
@@ -142,6 +156,7 @@ struct AgentMeterPanel: View {
             PanelWindowMask(
                 appearanceMode: model.appearanceMode,
                 onVisibilityChange: { visible in
+                    resetHoverAndKeyboardNavigation()
                     if visible {
                         model.panelDidOpen()
                         focusedReplyAgentID = nil
@@ -168,6 +183,26 @@ struct AgentMeterPanel: View {
         .environment(\.colorScheme, model.appearanceMode.colorScheme ?? systemColorScheme)
     }
 
+    private func resetHoverAndKeyboardNavigation() {
+        isKeyboardNavigationActive = false
+        hoveredAgentID = nil
+        hoveredCloseID = nil
+        hoveredApprovePrimaryID = nil
+        hoveredApproveSecondaryID = nil
+        hoveredDenyID = nil
+        hoveredInterruptID = nil
+        hoveredReplyToggleID = nil
+        hoveredReplyFieldID = nil
+        hoveredQuickCompactID = nil
+        hoveredQuickSendID = nil
+        hoveredWorkspacePath = nil
+        hoveredWorkspaceAgentKey = nil
+        hoveredHistoryID = nil
+        hoveredHistoryDeleteID = nil
+        hoveredHistoryConfirmDeleteID = nil
+        hoveredHistoryCancelDeleteID = nil
+    }
+
     private func ensureValidKeyboardSelection(forceFirst: Bool = false) {
         if showingQuickLaunch {
             if quickLaunchMode == .history {
@@ -192,6 +227,7 @@ struct AgentMeterPanel: View {
     private func handleKeyNavigation(_ cmd: PanelKeyNavigationCommand) -> Bool {
         if showingSettings {
             if cmd == .escape {
+                resetHoverAndKeyboardNavigation()
                 withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
                     showingSettings = false
                 }
@@ -205,12 +241,16 @@ struct AgentMeterPanel: View {
                 let items = filteredHistoricalSessions
                 switch cmd {
                 case .moveDown, .moveUp:
+                    let wasKeyboardActive = isKeyboardNavigationActive
+                    isKeyboardNavigationActive = true
                     isHistorySearchFocused = false
                     confirmingHistoryDeleteID = nil
                     guard !items.isEmpty else { return true }
-                    let currentID = selectedHistoryID ?? hoveredHistoryID
                     let nextIdx: Int
-                    if let currentID, let idx = items.firstIndex(where: { $0.id == currentID }) {
+                    if !wasKeyboardActive, hoveredHistoryID == nil {
+                        nextIdx = cmd == .moveDown ? 0 : items.count - 1
+                    } else if let currentID = (wasKeyboardActive ? selectedHistoryID : hoveredHistoryID) ?? selectedHistoryID,
+                              let idx = items.firstIndex(where: { $0.id == currentID }) {
                         nextIdx = cmd == .moveDown
                             ? (idx + 1) % items.count
                             : (idx - 1 + items.count) % items.count
@@ -225,6 +265,7 @@ struct AgentMeterPanel: View {
                     return true
 
                 case .moveLeft, .moveRight:
+                    isKeyboardNavigationActive = true
                     isHistorySearchFocused = false
                     confirmingHistoryDeleteID = nil
                     let availableFamilies: [AgentFamily?] = [nil] + AgentFamily.allCases.filter { fam in
@@ -244,7 +285,7 @@ struct AgentMeterPanel: View {
                     return true
 
                 case .confirmSelection:
-                    let targetID = selectedHistoryID ?? hoveredHistoryID ?? items.first?.id
+                    let targetID = (isKeyboardNavigationActive ? selectedHistoryID : nil) ?? hoveredHistoryID ?? selectedHistoryID ?? items.first?.id
                     guard let targetID, let item = items.first(where: { $0.id == targetID }) else { return false }
                     if confirmingHistoryDeleteID == item.id {
                         withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
@@ -254,6 +295,7 @@ struct AgentMeterPanel: View {
                     } else {
                         confirmingHistoryDeleteID = nil
                         isHistorySearchFocused = false
+                        resetHoverAndKeyboardNavigation()
                         showingQuickLaunch = false
                         model.resumeOrFocusHistoricalSession(item)
                     }
@@ -276,6 +318,7 @@ struct AgentMeterPanel: View {
                         isHistorySearchFocused = false
                         return true
                     }
+                    resetHoverAndKeyboardNavigation()
                     withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
                         showingQuickLaunch = false
                     }
@@ -286,10 +329,14 @@ struct AgentMeterPanel: View {
                 let workspaces = model.recentLaunchWorkspaces
                 switch cmd {
                 case .moveDown, .moveUp:
+                    let wasKeyboardActive = isKeyboardNavigationActive
+                    isKeyboardNavigationActive = true
                     guard !workspaces.isEmpty else { return true }
-                    let currentID = selectedWorkspacePath ?? hoveredWorkspacePath
                     let nextIdx: Int
-                    if let currentID, let idx = workspaces.firstIndex(where: { $0.id == currentID }) {
+                    if !wasKeyboardActive, hoveredWorkspacePath == nil {
+                        nextIdx = cmd == .moveDown ? 0 : workspaces.count - 1
+                    } else if let currentID = (wasKeyboardActive ? selectedWorkspacePath : hoveredWorkspacePath) ?? selectedWorkspacePath,
+                              let idx = workspaces.firstIndex(where: { $0.id == currentID }) {
                         nextIdx = cmd == .moveDown
                             ? (idx + 1) % workspaces.count
                             : (idx - 1 + workspaces.count) % workspaces.count
@@ -304,6 +351,7 @@ struct AgentMeterPanel: View {
                     return true
 
                 case .moveLeft, .moveRight:
+                    isKeyboardNavigationActive = true
                     let families = AgentFamily.allCases
                     let currentIdx = families.firstIndex(of: model.preferredLaunchFamily) ?? 0
                     let nextIdx = cmd == .moveRight
@@ -315,8 +363,9 @@ struct AgentMeterPanel: View {
                     return true
 
                 case .confirmSelection:
-                    let targetID = selectedWorkspacePath ?? hoveredWorkspacePath ?? workspaces.first?.id
+                    let targetID = (isKeyboardNavigationActive ? selectedWorkspacePath : nil) ?? hoveredWorkspacePath ?? selectedWorkspacePath ?? workspaces.first?.id
                     guard let targetID, let ws = workspaces.first(where: { $0.id == targetID }) else { return false }
+                    resetHoverAndKeyboardNavigation()
                     showingQuickLaunch = false
                     model.launchWorkspaceSession(family: model.preferredLaunchFamily, workspace: ws)
                     return true
@@ -325,6 +374,7 @@ struct AgentMeterPanel: View {
                     return false
 
                 case .escape:
+                    resetHoverAndKeyboardNavigation()
                     withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.20)) {
                         showingQuickLaunch = false
                     }
@@ -337,12 +387,16 @@ struct AgentMeterPanel: View {
         let items = filteredActivities
         switch cmd {
         case .moveDown, .moveUp:
+            let wasKeyboardActive = isKeyboardNavigationActive
+            isKeyboardNavigationActive = true
             focusedReplyAgentID = nil
             expandedReplyAgentID = nil
             guard !items.isEmpty else { return true }
-            let currentID = selectedAgentID ?? hoveredAgentID
             let nextIdx: Int
-            if let currentID, let idx = items.firstIndex(where: { $0.id == currentID }) {
+            if !wasKeyboardActive, hoveredAgentID == nil {
+                nextIdx = cmd == .moveDown ? 0 : items.count - 1
+            } else if let currentID = (wasKeyboardActive ? selectedAgentID : hoveredAgentID) ?? selectedAgentID,
+                      let idx = items.firstIndex(where: { $0.id == currentID }) {
                 nextIdx = cmd == .moveDown
                     ? (idx + 1) % items.count
                     : (idx - 1 + items.count) % items.count
@@ -357,6 +411,7 @@ struct AgentMeterPanel: View {
             return true
 
         case .moveLeft, .moveRight:
+            isKeyboardNavigationActive = true
             focusedReplyAgentID = nil
             expandedReplyAgentID = nil
             let allFilters = AgentListFilter.allCases
@@ -374,7 +429,7 @@ struct AgentMeterPanel: View {
             return true
 
         case .confirmSelection:
-            let targetID = selectedAgentID ?? hoveredAgentID ?? items.first?.id
+            let targetID = (isKeyboardNavigationActive ? selectedAgentID : nil) ?? hoveredAgentID ?? selectedAgentID ?? items.first?.id
             guard let targetID, let item = items.first(where: { $0.id == targetID }) else { return false }
             if item.status == .needsInput {
                 withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
@@ -386,7 +441,7 @@ struct AgentMeterPanel: View {
             return true
 
         case .openInlineReply:
-            let targetID = selectedAgentID ?? hoveredAgentID ?? items.first?.id
+            let targetID = (isKeyboardNavigationActive ? selectedAgentID : nil) ?? hoveredAgentID ?? selectedAgentID ?? items.first?.id
             guard let targetID, let item = items.first(where: { $0.id == targetID }) else { return false }
             withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
                 selectedAgentID = item.id
@@ -411,79 +466,85 @@ struct AgentMeterPanel: View {
     private func header(dark: Bool) -> some View {
         let en = model.language == .english
         let workingCount = model.activeAgentWorkingCount
-        return HStack(alignment: .center, spacing: 10) {
+        return HStack(alignment: .center, spacing: 8) {
             if showingSettings {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(FlatPalette.blue)
-                    .frame(width: 34, height: 34)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
+                    .frame(width: 26, height: 26)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(FlatPalette.cardBackground(dark: dark))
-                            .shadow(color: .black.opacity(dark ? 0.18 : 0.04), radius: 4, x: 0, y: 1.5)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(FlatPalette.trackBackground(dark: dark))
                     )
             } else if showingQuickLaunch {
                 Image(systemName: quickLaunchMode == .newSession ? "plus.rectangle.on.rectangle" : "clock.arrow.circlepath")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(model.preferredLaunchFamily.accentColor(dark: dark))
-                    .frame(width: 34, height: 34)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
+                    .frame(width: 26, height: 26)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(FlatPalette.cardBackground(dark: dark))
-                            .shadow(color: .black.opacity(dark ? 0.18 : 0.04), radius: 4, x: 0, y: 1.5)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(FlatPalette.trackBackground(dark: dark))
                     )
             } else {
                 AgentMeterBrandEmblem(dark: dark)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 26, height: 26)
             }
 
             if showingSettings {
                 Text(en ? "Settings" : "设置")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
             } else if showingQuickLaunch {
                 quickLaunchModeSegmentedControl(dark: dark)
             } else {
-                HStack(spacing: 7) {
+                HStack(spacing: 8) {
                     Text("Agent Meter")
-                        .font(.system(size: 15.5, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
                     if model.activeAgentNeedsInputCount > 0 {
-                        Text(en ? "\(model.activeAgentNeedsInputCount) Confirm" : "\(model.activeAgentNeedsInputCount) 待确认")
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(Color(red: 0.96, green: 0.64, blue: 0.18))
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule().fill(
-                                    dark
-                                        ? Color(red: 0.34, green: 0.23, blue: 0.10)
-                                        : Color(red: 1.0, green: 0.94, blue: 0.84)
-                                )
-                            )
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(FlatPalette.amberAlertForeground(dark: dark))
+                                .frame(width: 6, height: 6)
+                            Text(en ? "\(model.activeAgentNeedsInputCount) Confirm" : "\(model.activeAgentNeedsInputCount) 待确认")
+                                .font(.system(size: 11, weight: .medium))
+                                .monospacedDigit()
+                                .contentTransition(.numericText())
+                        }
+                        .foregroundStyle(FlatPalette.amberAlertForeground(dark: dark))
+                        .padding(.leading, 7)
+                        .padding(.trailing, 8)
+                        .frame(height: 20)
+                        .background(
+                            Capsule().fill(FlatPalette.amberAlertBackground(dark: dark))
+                        )
                     } else if workingCount > 0 {
-                        Text(en ? "\(workingCount) Running" : "\(workingCount) 运行中")
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                            .foregroundStyle(FlatPalette.blue)
-                            .monospacedDigit()
-                            .contentTransition(.numericText())
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(
-                                Capsule().fill(
-                                    dark
-                                        ? Color(red: 0.13, green: 0.23, blue: 0.38)
-                                        : Color(red: 0.88, green: 0.93, blue: 1.0)
-                                )
-                            )
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(FlatPalette.accentText(dark: dark))
+                                .frame(width: 6, height: 6)
+                            Text(en ? "\(workingCount) Running" : "\(workingCount) 运行中")
+                                .font(.system(size: 11, weight: .medium))
+                                .monospacedDigit()
+                                .contentTransition(.numericText())
+                        }
+                        .foregroundStyle(FlatPalette.accentText(dark: dark))
+                        .padding(.leading, 7)
+                        .padding(.trailing, 8)
+                        .frame(height: 20)
+                        .background(
+                            Capsule().fill(FlatPalette.accentSoftBackground(dark: dark))
+                        )
                     } else if !model.agentActivities.isEmpty {
                         Text(en ? "\(model.agentActivities.count) Online" : "\(model.agentActivities.count) 在线")
-                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
                             .monospacedDigit()
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(FlatPalette.cardBackground(dark: dark)))
+                            .padding(.horizontal, 8)
+                            .frame(height: 20)
+                            .background(
+                                Capsule().fill(FlatPalette.trackBackground(dark: dark))
+                            )
                     }
                 }
             }
@@ -492,6 +553,7 @@ struct AgentMeterPanel: View {
 
             if showingSettings || showingQuickLaunch {
                 FlatCapsuleButton(title: en ? "Back" : "返回", compact: true) {
+                    resetHoverAndKeyboardNavigation()
                     withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
                         showingSettings = false
                         showingQuickLaunch = false
@@ -499,8 +561,9 @@ struct AgentMeterPanel: View {
                     }
                 }
             } else {
-                HStack(spacing: 8) {
-                    FlatIconButton(icon: "plus", iconSize: 13.5, tooltip: en ? "New Agent Session" : "快速新建 Agent 会话") {
+                HStack(spacing: 6) {
+                    FlatIconButton(icon: "plus", size: 26, iconSize: 12.5, tooltip: en ? "New Agent Session" : "快速新建 Agent 会话") {
+                        resetHoverAndKeyboardNavigation()
                         quickLaunchMode = .newSession
                         model.refreshLaunchWorkspaces()
                         withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
@@ -508,7 +571,8 @@ struct AgentMeterPanel: View {
                         }
                     }
 
-                    FlatIconButton(icon: "clock.arrow.circlepath", iconSize: 13, tooltip: en ? "Resume History Session" : "恢复历史 Agent 会话") {
+                    FlatIconButton(icon: "clock.arrow.circlepath", size: 26, iconSize: 12.5, tooltip: en ? "Resume History Session" : "恢复历史 Agent 会话") {
+                        resetHoverAndKeyboardNavigation()
                         quickLaunchMode = .history
                         model.refreshHistoricalSessions()
                         withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
@@ -516,7 +580,8 @@ struct AgentMeterPanel: View {
                         }
                     }
 
-                    FlatIconButton(icon: "gearshape", rotatesOnHover: true, tooltip: en ? "Settings" : "设置") {
+                    FlatIconButton(icon: "gearshape", size: 26, iconSize: 12.5, rotatesOnHover: true, tooltip: en ? "Settings" : "设置") {
+                        resetHoverAndKeyboardNavigation()
                         withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
                             showingSettings = true
                         }
@@ -532,52 +597,50 @@ struct AgentMeterPanel: View {
                 quickLaunchModePill(mode: mode, dark: dark)
             }
         }
-        .padding(3)
+        .padding(2)
         .background(
-            Capsule()
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(FlatPalette.trackBackground(dark: dark))
-                .overlay(
-                    Capsule()
-                        .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
-                )
         )
     }
 
     private func quickLaunchModePill(mode: QuickLaunchMode, dark: Bool) -> some View {
         let isSelected = quickLaunchMode == mode
         let count = mode == .history ? model.historicalSessions.count : 0
+        let thumbShape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         return HStack(spacing: 4) {
             Text(mode.title(in: model.language))
-                .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium))
+                .font(.system(size: 11.5, weight: .medium))
             if count > 0 {
                 Text("\(count)")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .font(.system(size: 10.5, weight: .medium))
                     .monospacedDigit()
-                    .opacity(isSelected ? 0.88 : 0.6)
+                    .opacity(isSelected ? 0.9 : 0.7)
             }
         }
-        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 4.5)
+        .foregroundStyle(isSelected ? FlatPalette.inkPrimary(dark: dark) : FlatPalette.inkSecondary(dark: dark))
+        .padding(.horizontal, 10)
+        .frame(height: 22)
         .background {
             if isSelected {
-                Capsule()
+                thumbShape
                     .fill(FlatPalette.selectedPillBackground(dark: dark))
                     .overlay(
-                        Capsule()
+                        thumbShape
                             .strokeBorder(
-                                dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08),
-                                lineWidth: 1
+                                dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06),
+                                lineWidth: 0.5
                             )
                     )
-                    .shadow(color: .black.opacity(dark ? 0.28 : 0.08), radius: 2, x: 0, y: 1)
+                    .shadow(color: .black.opacity(dark ? 0.35 : 0.08), radius: 1.5, x: 0, y: 1)
                     .matchedGeometryEffect(id: "quickLaunchModePill", in: quickLaunchModeNamespace)
             }
         }
-        .contentShape(Capsule())
+        .contentShape(thumbShape)
         .overlay {
             PointingHandCursorOverlay(
                 onClick: {
+                    resetHoverAndKeyboardNavigation()
                     if mode == .history {
                         model.refreshHistoricalSessions()
                     } else {
@@ -595,38 +658,36 @@ struct AgentMeterPanel: View {
     @ViewBuilder
     private func agentDynamicSection(dark: Bool, now: Date) -> some View {
         let en = model.language == .english
-        let workingCount = model.activeAgentWorkingCount
-        let needsInputCount = model.activeAgentNeedsInputCount
         let unreadCount = model.unreadCompletionCount
 
         VStack(alignment: .leading, spacing: 10) {
-            // Section toolbar: status pulse + filter pills + mark-all-read action
-            HStack(spacing: 6) {
-                AgentPulseDot(
-                    status: needsInputCount > 0
-                        ? .needsInput
-                        : (workingCount > 0 ? .working : (model.agentActivities.contains { $0.status == .completed } ? .completed : .idle))
-                )
-                Text(en ? "AGENT ACTIVITY" : "AGENT 动态")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+            // Section toolbar: Sessions label + Stageshow Segmented Control + mark-all-read action
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(FlatPalette.accent(dark: dark))
+                        .frame(width: 6, height: 6)
+                    Text(en ? "Sessions" : "会话列表")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
+                }
 
                 Spacer(minLength: 4)
 
                 if unreadCount > 0 {
                     HStack(spacing: 3.5) {
                         Circle()
-                            .fill(Color(red: 1.0, green: 0.22, blue: 0.44))
+                            .fill(FlatPalette.dangerInterruptForeground(dark: dark))
                             .frame(width: 5, height: 5)
                         Text(en ? "Read" : "已读")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 10.5, weight: .medium))
                     }
-                    .foregroundStyle(dark ? Color(white: 0.90) : Color(white: 0.20))
+                    .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
                     .padding(.horizontal, 7)
-                    .padding(.vertical, 3.5)
+                    .frame(height: 20)
                     .background(
                         Capsule()
-                            .fill(dark ? Color.white.opacity(0.08) : Color.black.opacity(0.05))
+                            .fill(FlatPalette.trackBackground(dark: dark))
                     )
                     .contentShape(Capsule())
                     .overlay {
@@ -645,15 +706,16 @@ struct AgentMeterPanel: View {
                     filterSegmentedControl(dark: dark)
                 }
             }
-            .padding(.horizontal, 2)
+            .padding(.leading, 2)
 
             if model.agentActivities.isEmpty {
+                let targetHostName = model.resolvedLaunchTerminalHost().displayName
                 emptyStateCard(
                     icon: "terminal",
                     title: en ? "No active CLI Agent sessions detected" : "当前未检测到正在运行的 CLI Agent",
                     subtitle: en
-                        ? "Automatically discovers Codex, Claude, Copilot & Antigravity sessions in Rex"
-                        : "支持自动发现本机及 Rex SSH 中的 Codex、Claude、Copilot 与 Antigravity 会话"
+                        ? "Automatically discovers Codex, Claude, Copilot & Antigravity sessions in \(targetHostName)"
+                        : "支持自动发现本机及 \(targetHostName) SSH 中的 Codex、Claude、Copilot 与 Antigravity 会话"
                 )
             } else if filteredActivities.isEmpty {
                 emptyStateCard(
@@ -666,7 +728,7 @@ struct AgentMeterPanel: View {
                         : "切换到「全部」查看其余 \(model.agentActivities.count) 个在线会话"
                 )
             } else {
-                VStack(spacing: 11) {
+                VStack(spacing: 12) {
                     ForEach(filteredActivities) { item in
                         agentActivityRow(item, dark: dark, now: now)
                     }
@@ -681,52 +743,50 @@ struct AgentMeterPanel: View {
                 filterPillItem(filter: filter, dark: dark)
             }
         }
-        .padding(2.5)
+        .padding(2)
         .background(
-            Capsule()
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(FlatPalette.trackBackground(dark: dark))
-                .overlay(
-                    Capsule()
-                        .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
-                )
         )
     }
 
     private func filterPillItem(filter: AgentListFilter, dark: Bool) -> some View {
         let isSelected = selectedFilter == filter
         let count = filterCount(for: filter)
-        return HStack(spacing: 3) {
+        let thumbShape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return HStack(spacing: 3.5) {
             Text(filter.title(in: model.language))
-                .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                .font(.system(size: 11.5, weight: .medium))
             if count > 0 {
                 Text("\(count)")
-                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
-                    .opacity(isSelected ? 0.9 : 0.65)
+                    .opacity(isSelected ? 0.92 : 0.72)
             }
         }
-        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3.5)
+        .foregroundStyle(isSelected ? FlatPalette.inkPrimary(dark: dark) : FlatPalette.inkSecondary(dark: dark))
+        .padding(.horizontal, 9)
+        .frame(height: 22)
         .background {
             if isSelected {
-                Capsule()
+                thumbShape
                     .fill(FlatPalette.selectedPillBackground(dark: dark))
                     .overlay(
-                        Capsule()
+                        thumbShape
                             .strokeBorder(
-                                dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08),
-                                lineWidth: 1
+                                dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06),
+                                lineWidth: 0.5
                             )
                     )
-                    .shadow(color: .black.opacity(dark ? 0.28 : 0.08), radius: 2, x: 0, y: 1)
+                    .shadow(color: .black.opacity(dark ? 0.35 : 0.08), radius: 1.5, x: 0, y: 1)
                     .matchedGeometryEffect(id: "filterPill", in: filterNamespace)
             }
         }
-        .contentShape(Capsule())
+        .contentShape(thumbShape)
         .overlay {
             PointingHandCursorOverlay(
                 onClick: {
+                    resetHoverAndKeyboardNavigation()
                     withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
                         selectedFilter = filter
                     }
@@ -763,14 +823,12 @@ struct AgentMeterPanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .modifier(FlatCardSurface(cornerRadius: 12))
+        .padding(12)
+        .modifier(FlatCardSurface(cornerRadius: 10))
     }
 
-    private func shouldShowExtendedPreview(for item: AgentActivityItem, isHovered: Bool) -> Bool {
-        if item.status == .needsInput { return true }
-        if isHovered && item.terminalPreviewLines.count > 1 { return true }
-        return false
+    private func shouldShowExtendedPreview(for item: AgentActivityItem) -> Bool {
+        return item.status == .needsInput || item.status == .working
     }
 
     private func agentActivityRow(_ item: AgentActivityItem, dark: Bool, now: Date) -> some View {
@@ -793,26 +851,26 @@ struct AgentMeterPanel: View {
             || isReplyFieldHovered
             || isQuickCompactHovered
             || isQuickSendHovered
-        let isSelected = selectedAgentID == item.id
+        let isSelected = isKeyboardNavigationActive && selectedAgentID == item.id
         let isHighlighted = isHovered || isSelected
         let familyColor = item.family.accentColor(dark: dark)
         let statusColor = agentStatusColor(item.status, dark: dark)
-        let isExpanded = shouldShowExtendedPreview(for: item, isHovered: isHighlighted)
+        let isExpanded = shouldShowExtendedPreview(for: item)
         let hasDraft = !(replyDrafts[item.id]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let isReplyFocused = focusedReplyAgentID == item.id
-        let showInlineReply: Bool = {
-            switch item.status {
-            case .completed, .idle:
-                return isHighlighted || isReplyFocused || hasDraft || expandedReplyAgentID == item.id
-            case .needsInput, .working:
-                return expandedReplyAgentID == item.id || isReplyFocused || hasDraft
-            }
-        }()
+        let showInlineReply = expandedReplyAgentID == item.id || isReplyFocused || hasDraft
         let isLongRunning = item.isLongRunningWorking(now: now)
-        let showWorkingControlBar = item.status == .working && (isHighlighted || isLongRunning || showInlineReply)
-        let hasPreview = !item.terminalPreviewLines.isEmpty || showInlineReply
+        let showWorkingControlBar = item.status == .working && isLongRunning
+        let supportsFooterHoverActions = item.status != .needsInput && !showWorkingControlBar
+        let showFooterHoverActions = supportsFooterHoverActions && isHovered
+        let cacheRemaining = item.cacheWarmRemainingSeconds(now: now)
+        let hasTelemetryFooter = item.gitDiff != nil || cacheRemaining != nil || item.contextPercentUsed != nil || supportsFooterHoverActions
+        let hasPreview = !item.terminalPreviewLines.isEmpty || showInlineReply || hasTelemetryFooter
 
-        return VStack(alignment: .leading, spacing: 10) {
+        let cardShape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let isLead = item.status == .needsInput || isLongRunning
+
+        return VStack(alignment: .leading, spacing: 8) {
             agentRowHeader(
                 item: item,
                 isHovered: isHighlighted,
@@ -822,12 +880,15 @@ struct AgentMeterPanel: View {
                 now: now
             )
 
-            // Live Micro Terminal Preview Box (100% full width, expands automatically on hover or keyboard selection)
+            // Live Micro Terminal Preview Box (100% full width, constant line count for 0px hover layout shift)
             if hasPreview {
                 miniTerminalPreview(
                     item: item,
                     expanded: isExpanded,
                     showInlineReply: showInlineReply,
+                    hasTelemetryFooter: hasTelemetryFooter,
+                    showFooterHoverActions: showFooterHoverActions,
+                    cacheRemaining: cacheRemaining,
                     familyColor: familyColor,
                     statusColor: statusColor,
                     dark: dark
@@ -841,17 +902,19 @@ struct AgentMeterPanel: View {
                 inlineWorkingReserveBar(item: item, isLongRunning: isLongRunning, dark: dark)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .padding(10)
+        .contentShape(cardShape)
         // Full-card tracking region (never shrinks when expanded, so moving mouse down into the prompt never drops hover)
         .overlay {
             PointingHandCursorOverlay(
+                tooltip: model.language == .english
+                    ? "Click to focus \(item.terminalHost.displayName) session"
+                    : "点击跳转到 \(item.terminalHost.displayName) 会话",
                 onHoverChange: { hovering in
-                    hoveredAgentID = hovering ? item.id : (hoveredAgentID == item.id ? nil : hoveredAgentID)
                     if hovering {
-                        selectedAgentID = item.id
+                        isKeyboardNavigationActive = false
                     }
+                    hoveredAgentID = hovering ? item.id : (hoveredAgentID == item.id ? nil : hoveredAgentID)
                 },
                 onClick: {
                     selectedAgentID = item.id
@@ -875,8 +938,8 @@ struct AgentMeterPanel: View {
                     familyColor: familyColor,
                     dark: dark
                 )
-                .padding(.horizontal, 24)
-                .padding(.bottom, (item.status == .needsInput || showWorkingControlBar) ? 56.5 : 20.5)
+                .padding(.horizontal, 20)
+                .padding(.bottom, (item.status == .needsInput || showWorkingControlBar) ? 46 : 18)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -890,33 +953,56 @@ struct AgentMeterPanel: View {
                     showInlineReply: showInlineReply,
                     dark: dark
                 )
-                .padding(.bottom, 13)
-                .padding(.trailing, 14)
+                .padding(.bottom, 10)
+                .padding(.trailing, 10)
             } else if showWorkingControlBar {
                 inlineWorkingActionButtons(
                     item: item,
                     dark: dark,
                     showInlineReply: showInlineReply
                 )
-                .padding(.bottom, 13)
-                .padding(.trailing, 14)
+                .padding(.bottom, 10)
+                .padding(.trailing, 10)
+            } else if showFooterHoverActions {
+                inlineFooterHoverActionButtons(
+                    item: item,
+                    dark: dark,
+                    showInlineReply: showInlineReply
+                )
+                .padding(.trailing, 20)
+                .padding(.bottom, showInlineReply ? 45 : 18)
             }
         }
         .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            cardShape
                 .fill(FlatPalette.elevatedRowBackground(dark: dark, hovered: isHighlighted))
+                .overlay(alignment: .top) {
+                    if dark {
+                        Rectangle()
+                            .fill(isHighlighted ? familyColor.opacity(0.32) : Color.white.opacity(isLead ? 0.08 : 0.05))
+                            .frame(height: 1)
+                            .padding(.horizontal, 8)
+                    }
+                }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    cardShape
                         .strokeBorder(
-                            rowBorderColor(for: item, isHovered: isHovered, isSelected: isSelected, familyColor: familyColor, dark: dark),
-                            lineWidth: (item.status == .needsInput || isSelected) ? 1.35 : 1.0
+                            rowBorderColor(
+                                for: item,
+                                isLead: isLead,
+                                isHovered: isHovered,
+                                isSelected: isSelected,
+                                familyColor: familyColor,
+                                dark: dark
+                            ),
+                            lineWidth: (isHighlighted || isLead) ? 1.25 : 1.0
                         )
                 }
                 .shadow(
-                    color: .black.opacity(dark ? (isHighlighted ? 0.24 : 0.14) : (isHighlighted ? 0.06 : 0.025)),
-                    radius: isHighlighted ? 5 : 2.5,
+                    color: .black.opacity(dark ? 0.16 : 0.04),
+                    radius: 1.5,
                     x: 0,
-                    y: isHighlighted ? 2 : 1
+                    y: 1
                 )
         }
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16), value: isHighlighted)
@@ -938,8 +1024,39 @@ struct AgentMeterPanel: View {
     ) -> some View {
         let en = model.language == .english
         let isLongRunning = item.isLongRunningWorking(now: now)
+        let isWarningBadge = item.status == .needsInput || (item.status == .working && isLongRunning)
         let amberColor = FlatPalette.amberAlertForeground(dark: dark)
-        let effectiveStatusColor: Color = (item.status == .working && isLongRunning) ? amberColor : statusColor
+        let badgeForeground: Color = {
+            if isWarningBadge {
+                return amberColor
+            }
+            switch item.status {
+            case .needsInput:
+                return amberColor
+            case .working:
+                return FlatPalette.accentText(dark: dark)
+            case .completed:
+                return FlatPalette.softGoodForeground(dark: dark)
+            case .idle:
+                return FlatPalette.inkSecondary(dark: dark)
+            }
+        }()
+        let badgeBackground: Color = {
+            if isWarningBadge {
+                return FlatPalette.amberAlertBackground(dark: dark)
+            }
+            switch item.status {
+            case .needsInput:
+                return FlatPalette.amberAlertBackground(dark: dark)
+            case .working:
+                return FlatPalette.accentSoftBackground(dark: dark)
+            case .completed:
+                return FlatPalette.softGoodBackground(dark: dark)
+            case .idle:
+                return FlatPalette.trackBackground(dark: dark)
+            }
+        }()
+
         let statusLabel: String = {
             switch item.status {
             case .needsInput: return en ? "Confirm" : "待确认"
@@ -956,116 +1073,94 @@ struct AgentMeterPanel: View {
             return formatLiveDuration(elapsed)
         }()
 
-        let cacheRemaining = item.cacheWarmRemainingSeconds(now: now)
-
-        return HStack(alignment: .top, spacing: 10) {
+        return HStack(alignment: .top, spacing: 9) {
             ZStack(alignment: .topTrailing) {
                 AgentFamilyBadgeIcon(
                     family: item.family,
                     dark: dark,
-                    highlighted: item.status == .working || item.status == .needsInput || isHovered,
-                    size: 32
+                    highlighted: isHovered,
+                    size: 28
                 )
                 .help(item.family.badgeTitle)
 
                 if item.isUnreadCompletion {
-                    UnreadCompletionBeacon()
+                    UnreadCompletionBeacon(dark: dark)
                         .offset(x: 3, y: -3)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
-            .padding(.top, 2)
+            .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 // Row 1: Title + Status Badge
-                HStack(alignment: .center, spacing: 6) {
+                HStack(alignment: .center, spacing: 8) {
                     HStack(spacing: 5.5) {
                         if item.isFocusedInHost {
                             Circle()
-                                .fill(familyColor)
-                                .frame(width: 5.5, height: 5.5)
+                                .fill(FlatPalette.inkSecondary(dark: dark))
+                                .frame(width: 5, height: 5)
                                 .help(en ? "Focused terminal window" : "当前焦点终端窗口")
                         }
                         Text(item.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.primary)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
 
                     Spacer(minLength: 6)
 
-                    // Status badge (incorporates live duration only when running)
+                    // Stageshow .ss-badge: semantic tones (warning, accent, success, neutral)
                     HStack(spacing: 5) {
                         if item.status == .needsInput {
-                            AgentPulseDot(status: .needsInput, size: 5)
+                            AgentPulseDot(status: .needsInput, size: 6)
                         } else if item.status == .working {
                             if isLongRunning {
                                 Image(systemName: "clock.badge.exclamationmark")
-                                    .font(.system(size: 9.5, weight: .bold))
+                                    .font(.system(size: 9.5, weight: .semibold))
                                     .foregroundStyle(amberColor)
                             } else {
-                                AgentPulseDot(status: .working, size: 5)
+                                AgentPulseDot(status: .working, size: 6)
                             }
                         } else if item.status == .completed {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 8.5, weight: .bold))
-                                .foregroundStyle(effectiveStatusColor)
+                            Circle()
+                                .fill(FlatPalette.softGoodForeground(dark: dark))
+                                .frame(width: 6, height: 6)
                         } else {
                             Circle()
-                                .fill(.secondary.opacity(0.45))
-                                .frame(width: 5, height: 5)
+                                .fill(FlatPalette.inkTertiary(dark: dark).opacity(0.55))
+                                .frame(width: 6, height: 6)
                         }
+
                         Text(statusLabel)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(item.status == .idle ? .secondary : effectiveStatusColor)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(badgeForeground)
 
                         if let elapsedText {
-                            Text(elapsedText)
-                                .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle((item.status == .idle ? Color.secondary : effectiveStatusColor).opacity(0.82))
+                            Text("· \(elapsedText)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(badgeForeground)
                                 .monospacedDigit()
                                 .contentTransition(.numericText())
                         }
                     }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 3.5)
-                    .background {
+                    .padding(.leading, 7)
+                    .padding(.trailing, 8)
+                    .frame(height: 20)
+                    .background(
                         Capsule()
-                            .fill(
-                                (item.status == .working && isLongRunning)
-                                    ? FlatPalette.amberAlertBackground(dark: dark)
-                                    : statusBadgeFill(item.status, dark: dark)
-                            )
-                            .overlay {
-                                Capsule()
-                                    .strokeBorder(
-                                        (item.status == .working && isLongRunning)
-                                            ? amberColor.opacity(dark ? 0.38 : 0.28)
-                                            : statusBadgeStroke(item.status, dark: dark),
-                                        lineWidth: 1
-                                    )
-                            }
-                    }
+                            .fill(badgeBackground)
+                    )
                     .fixedSize(horizontal: true, vertical: false)
                 }
 
-                // Row 2: Subtitle + Right-aligned Inline Git Diff, Cache Warm & Context Meter
+                // Row 2: Subtitle (100% full width for host, SSH/path, branch + worktree, and workspace conflict badge)
                 HStack(alignment: .center, spacing: 6) {
                     subtitleRow(item: item, familyColor: familyColor)
 
-                    Spacer(minLength: 4)
-
-                    if item.gitDiff != nil || cacheRemaining != nil || item.contextPercentUsed != nil {
-                        previewRightAccessory(
-                            item: item,
-                            cacheRemaining: cacheRemaining,
-                            familyColor: familyColor,
-                            dark: dark
-                        )
-                        .fixedSize(horizontal: true, vertical: false)
-                    }
+                    Spacer(minLength: 0)
                 }
+                .frame(height: 18)
             }
         }
     }
@@ -1076,11 +1171,12 @@ struct AgentMeterPanel: View {
         isRowHovered: Bool,
         dark: Bool
     ) -> some View {
-        Image(systemName: "xmark")
+        let dangerFg = FlatPalette.dangerInterruptForeground(dark: dark)
+        return Image(systemName: "xmark")
             .font(.system(size: 8.5, weight: .bold))
             .foregroundStyle(
                 isCloseHovered
-                    ? Color(red: 0.96, green: 0.32, blue: 0.38)
+                    ? dangerFg
                     : FlatPalette.inkSecondary(dark: dark)
             )
             .frame(width: 20, height: 20)
@@ -1088,23 +1184,26 @@ struct AgentMeterPanel: View {
                 Circle()
                     .fill(
                         isCloseHovered
-                            ? (dark ? Color(red: 0.36, green: 0.14, blue: 0.17) : Color(red: 1.0, green: 0.90, blue: 0.92))
-                            : (dark ? Color(red: 0.20, green: 0.20, blue: 0.22) : Color.white)
+                            ? FlatPalette.dangerInterruptBackground(dark: dark, hovered: true)
+                            : FlatPalette.cardBackground(dark: dark)
                     )
                     .overlay {
                         Circle()
                             .strokeBorder(
                                 isCloseHovered
-                                    ? Color(red: 0.96, green: 0.32, blue: 0.38).opacity(0.45)
-                                    : (dark ? Color.white.opacity(0.16) : Color.black.opacity(0.12)),
+                                    ? dangerFg.opacity(0.42)
+                                    : (dark ? Color.white.opacity(0.14) : Color.black.opacity(0.11)),
                                 lineWidth: 1
                             )
                     }
-                    .shadow(color: .black.opacity(dark ? 0.45 : 0.12), radius: 3, x: 0, y: 1)
+                    .shadow(color: .black.opacity(dark ? 0.40 : 0.10), radius: 3, x: 0, y: 1)
             }
             .overlay {
                 PointingHandCursorOverlay(
                     onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
                         hoveredCloseID = hovering ? item.id : (hoveredCloseID == item.id ? nil : hoveredCloseID)
                     },
                     onClick: {
@@ -1137,68 +1236,77 @@ struct AgentMeterPanel: View {
             return "~"
         }()
 
-        HStack(spacing: 4.5) {
+        HStack(spacing: 5) {
+            if item.terminalHost == .ghostty || item.rexPane != nil {
+                let hostName = item.terminalHost.displayName
+                Text(hostName)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
+                    .padding(.horizontal, 5)
+                    .frame(height: 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(FlatPalette.trackBackground(dark: dark))
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                    .help(en ? "Hosted in \(hostName) terminal" : "运行于 \(hostName) 终端")
+            }
+
             if let sshTarget = item.sshTarget, !sshTarget.isEmpty {
                 HStack(spacing: 3.5) {
                     Image(systemName: "network")
-                        .font(.system(size: 8.5, weight: .semibold))
-                        .foregroundStyle(familyColor.opacity(0.85))
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
                     Text(sshTarget)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
 
                 if !item.cwdPath.isEmpty {
                     Text("·")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
                     Text(displayPath)
-                        .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             } else {
-                Image(systemName: "folder")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(familyColor.opacity(0.85))
                 Text(displayPath)
-                    .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
 
             if let branch = item.gitBranch, !branch.isEmpty {
+                let branchColor = FlatPalette.terminalPath(dark: dark)
                 Text("·")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
 
-                HStack(spacing: 3) {
+                HStack(spacing: 4) {
                     Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 8.5, weight: .semibold))
-                        .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(branchColor)
                     Text(branch)
-                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                        .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
+                        .font(.system(size: 11, weight: .regular, design: .monospaced))
+                        .foregroundStyle(branchColor)
                         .lineLimit(1)
                         .truncationMode(.tail)
 
                     if item.isGitWorktree {
                         Text("WT")
-                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
-                            .foregroundStyle(familyColor)
-                            .padding(.horizontal, 4.5)
-                            .padding(.vertical, 1)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(FlatPalette.accentText(dark: dark))
+                            .padding(.horizontal, 5)
+                            .frame(height: 16)
                             .background(
-                                Capsule()
-                                    .fill(familyColor.opacity(dark ? 0.18 : 0.11))
-                                    .overlay(
-                                        Capsule()
-                                            .strokeBorder(familyColor.opacity(dark ? 0.36 : 0.24), lineWidth: 1)
-                                    )
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(FlatPalette.accentSoftBackground(dark: dark))
                             )
                             .fixedSize(horizontal: true, vertical: false)
                     }
@@ -1213,29 +1321,21 @@ struct AgentMeterPanel: View {
             if item.hasWorkspaceCollision {
                 let conflictFg = FlatPalette.conflictWarningForeground(dark: dark)
                 let conflictBg = FlatPalette.conflictWarningBackground(dark: dark)
-                HStack(spacing: 3) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 8, weight: .bold))
-                    Text(en ? "Conflict" : "目录冲突")
-                        .font(.system(size: 9, weight: .semibold))
-                }
-                .foregroundStyle(conflictFg)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1.5)
-                .background(
-                    Capsule()
-                        .fill(conflictBg)
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(conflictFg.opacity(dark ? 0.40 : 0.28), lineWidth: 1)
-                        )
-                )
-                .fixedSize(horizontal: true, vertical: false)
-                .help(
-                    en
-                        ? "\(item.collisionPeerCount + 1) active sessions share this checkout (\(displayPath)) — risk of concurrent write conflicts"
-                        : "检测到 \(item.collisionPeerCount + 1) 个会话共用同一工作区目录（\(displayPath)），可能产生并发写冲突"
-                )
+                Text(en ? "Conflict" : "目录冲突")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(conflictFg)
+                    .padding(.horizontal, 6)
+                    .frame(height: 16)
+                    .background(
+                        Capsule()
+                            .fill(conflictBg)
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                    .help(
+                        en
+                            ? "\(item.collisionPeerCount + 1) active sessions share this checkout (\(displayPath)) — risk of concurrent write conflicts"
+                            : "检测到 \(item.collisionPeerCount + 1) 个会话共用同一工作区目录（\(displayPath)），可能产生并发写冲突"
+                    )
             }
         }
     }
@@ -1244,6 +1344,9 @@ struct AgentMeterPanel: View {
         item: AgentActivityItem,
         expanded: Bool,
         showInlineReply: Bool,
+        hasTelemetryFooter: Bool,
+        showFooterHoverActions: Bool,
+        cacheRemaining: Int?,
         familyColor: Color,
         statusColor: Color,
         dark: Bool
@@ -1253,7 +1356,7 @@ struct AgentMeterPanel: View {
             ? Array(item.terminalPreviewLines.suffix(maxVisibleLines))
             : Array(item.terminalPreviewLines.suffix(1))
 
-        return VStack(alignment: .leading, spacing: 6.5) {
+        return VStack(alignment: .leading, spacing: 6) {
             if !lines.isEmpty {
                 previewLinesColumn(
                     item: item,
@@ -1264,10 +1367,25 @@ struct AgentMeterPanel: View {
                 )
             }
 
-            if showInlineReply {
+            if hasTelemetryFooter {
                 if !lines.isEmpty {
                     Rectangle()
-                        .fill(FlatPalette.hairlineBorder(dark: dark))
+                        .fill(FlatPalette.faintBorder(dark: dark))
+                        .frame(height: 1)
+                }
+                terminalTelemetryFooter(
+                    item: item,
+                    cacheRemaining: cacheRemaining,
+                    showHoverActions: showFooterHoverActions,
+                    familyColor: familyColor,
+                    dark: dark
+                )
+            }
+
+            if showInlineReply {
+                if !lines.isEmpty || hasTelemetryFooter {
+                    Rectangle()
+                        .fill(FlatPalette.faintBorder(dark: dark))
                         .frame(height: 1)
                 }
 
@@ -1277,15 +1395,15 @@ struct AgentMeterPanel: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7.5)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(FlatPalette.terminalWellBackground(dark: dark))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .strokeBorder(
                             focusedReplyAgentID == item.id
-                                ? familyColor.opacity(dark ? 0.55 : 0.45)
+                                ? (dark ? Color.white.opacity(0.22) : Color.black.opacity(0.18))
                                 : FlatPalette.hairlineBorder(dark: dark),
                             lineWidth: 1
                         )
@@ -1301,6 +1419,7 @@ struct AgentMeterPanel: View {
         dark: Bool
     ) -> some View {
         let en = model.language == .english
+        let hostName = item.terminalHost.displayName
         let draftBinding = Binding<String>(
             get: { replyDrafts[item.id] ?? "" },
             set: { replyDrafts[item.id] = $0 }
@@ -1315,6 +1434,9 @@ struct AgentMeterPanel: View {
                 .overlay {
                     PointingHandCursorOverlay(
                         onHoverChange: { hovering in
+                            if hovering {
+                                isKeyboardNavigationActive = false
+                            }
                             hoveredReplyFieldID = hovering ? item.id : (hoveredReplyFieldID == item.id ? nil : hoveredReplyFieldID)
                         },
                         onClick: {
@@ -1325,10 +1447,13 @@ struct AgentMeterPanel: View {
 
             InlinePromptTextField(
                 text: draftBinding,
-                placeholder: en ? "Reply to Rex… (press /)" : "发送指令至 Rex…（按 / 聚焦）",
+                placeholder: en ? "Reply to \(hostName)… (press /)" : "发送指令至 \(hostName)…（按 / 聚焦）",
                 dark: dark,
                 requestFocus: focusedReplyAgentID == item.id,
                 onHoverChange: { hovering in
+                    if hovering {
+                        isKeyboardNavigationActive = false
+                    }
                     hoveredReplyFieldID = hovering ? item.id : (hoveredReplyFieldID == item.id ? nil : hoveredReplyFieldID)
                 },
                 onFocusChange: { focused in
@@ -1367,6 +1492,9 @@ struct AgentMeterPanel: View {
                         PointingHandCursorOverlay(
                             tooltip: en ? "Send /compact to compact context window" : "发送 /compact 压缩上下文窗口",
                             onHoverChange: { hovering in
+                                if hovering {
+                                    isKeyboardNavigationActive = false
+                                }
                                 hoveredQuickCompactID = hovering ? item.id : (hoveredQuickCompactID == item.id ? nil : hoveredQuickCompactID)
                             },
                             onClick: {
@@ -1408,8 +1536,11 @@ struct AgentMeterPanel: View {
             )
             .overlay {
                 PointingHandCursorOverlay(
-                    tooltip: en ? "Send message to Rex session (Enter)" : "发送指令至 Rex 会话（回车）",
+                    tooltip: en ? "Send message to \(hostName) session (Enter)" : "发送指令至 \(hostName) 会话（回车）",
                     onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
                         hoveredQuickSendID = hovering ? item.id : (hoveredQuickSendID == item.id ? nil : hoveredQuickSendID)
                     },
                     onClick: {
@@ -1442,100 +1573,209 @@ struct AgentMeterPanel: View {
         statusColor: Color,
         dark: Bool
     ) -> some View {
-        let primaryTextColor = dark ? Color(white: 0.93) : Color(white: 0.14)
-        let secondaryTextColor = dark ? Color(white: 0.68) : Color(white: 0.38)
-        let barColor = item.status == .idle ? familyColor.opacity(0.65) : statusColor.opacity(0.90)
-        let chevronColor = item.status == .idle ? familyColor.opacity(0.85) : statusColor
+        let primaryTextColor = FlatPalette.inkPrimary(dark: dark)
+        let secondaryTextColor = FlatPalette.inkSecondary(dark: dark)
+        let sigilColor = FlatPalette.terminalSigil(dark: dark)
 
-        return HStack(alignment: .top, spacing: 7) {
-            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(barColor)
-                .frame(width: 2.5)
-                .padding(.vertical, 1)
-
-            VStack(alignment: .leading, spacing: 3.5) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { idx, line in
-                    let isLast = idx == lines.count - 1
-                    let isCommandOrQuestion = item.status == .needsInput && (
-                        line.hasPrefix("⏺") ||
-                        line.hasPrefix("•") ||
-                        line.lowercased().contains("do you want") ||
-                        line.lowercased().contains("would you like") ||
-                        line.lowercased().contains("allow")
-                    )
-                    let isHighlightedLine = isLast || isCommandOrQuestion
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        if lines.count == 1 {
-                            Text("›")
-                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                                .foregroundStyle(chevronColor)
-                        }
-                        Text(line)
-                            .font(.system(size: 10.5, weight: isCommandOrQuestion ? .semibold : (isLast ? .medium : .regular), design: .monospaced))
-                            .foregroundStyle(isHighlightedLine ? primaryTextColor : secondaryTextColor)
-                            .lineLimit(item.status == .needsInput ? 2 : 1)
-                            .fixedSize(horizontal: false, vertical: item.status == .needsInput)
-                            .truncationMode(.tail)
+        return VStack(alignment: .leading, spacing: 2.5) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { idx, line in
+                let isFirst = idx == 0
+                let isCommandOrQuestion = item.status == .needsInput && (
+                    line.hasPrefix("⏺") ||
+                    line.hasPrefix("•") ||
+                    line.lowercased().contains("do you want") ||
+                    line.lowercased().contains("would you like") ||
+                    line.lowercased().contains("allow")
+                )
+                let isHighlightedLine = isFirst || isCommandOrQuestion
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if isFirst {
+                        Text(item.status == .needsInput ? "❯" : "›")
+                            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(sigilColor)
                     }
+                    Text(line)
+                        .font(.system(size: 11.5, weight: .regular, design: .monospaced))
+                        .foregroundStyle(isHighlightedLine ? primaryTextColor : secondaryTextColor)
+                        .lineLimit(item.status == .needsInput ? 2 : 1)
+                        .fixedSize(horizontal: false, vertical: item.status == .needsInput)
+                        .truncationMode(.tail)
                 }
             }
-            Spacer(minLength: 4)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func previewRightAccessory(
+    private func terminalTelemetryFooter(
         item: AgentActivityItem,
         cacheRemaining: Int?,
+        showHoverActions: Bool,
         familyColor: Color,
         dark: Bool
     ) -> some View {
-        let hasDiff = item.gitDiff != nil
-        let hasCache = cacheRemaining != nil
-        let hasCtx = item.contextPercentUsed != nil
+        let en = model.language == .english
 
-        return HStack(spacing: 5) {
+        return HStack(alignment: .center, spacing: 6) {
             if let diff = item.gitDiff {
-                benchoGitDiffChip(diff: diff, dark: dark)
+                HStack(spacing: 4) {
+                    Text(en ? "Diff" : "变更")
+                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                        .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
+                    benchoGitDiffChip(diff: diff, dark: dark)
+                }
+                .fixedSize(horizontal: true, vertical: false)
             }
-            if hasDiff && (hasCache || hasCtx) {
+
+            if item.gitDiff != nil && cacheRemaining != nil {
                 Text("·")
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                    .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
             }
+
             if let cacheRemaining {
                 benchoCacheWarmChip(remainingSeconds: cacheRemaining, dark: dark)
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            if hasCache && hasCtx {
-                Text("·")
-                    .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(.tertiary)
+
+            if item.gitDiff == nil && cacheRemaining == nil {
+                Text(item.terminalHost.displayName)
+                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                    .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
+                    .lineLimit(1)
             }
+
+            Spacer(minLength: 6)
+
             if let ctx = item.contextPercentUsed {
                 benchoContextMeterChip(ctx: ctx, familyColor: familyColor, dark: dark)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .opacity(showHoverActions ? 0 : 1)
             }
         }
-        .padding(.trailing, 2)
+        .frame(height: 18)
+    }
+
+    private func inlineFooterHoverActionButtons(
+        item: AgentActivityItem,
+        dark: Bool,
+        showInlineReply: Bool
+    ) -> some View {
+        let en = model.language == .english
+        let isInterruptHovered = hoveredInterruptID == item.id
+        let isReplyToggleHovered = hoveredReplyToggleID == item.id
+        let btnShape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+
+        let stopFg = FlatPalette.dangerInterruptForeground(dark: dark)
+        let stopBg = FlatPalette.dangerInterruptBackground(dark: dark, hovered: isInterruptHovered)
+
+        let replyBg = FlatPalette.raisedBackground(dark: dark, hovered: showInlineReply || isReplyToggleHovered)
+        let replyFg = FlatPalette.inkPrimary(dark: dark)
+
+        return HStack(spacing: 4) {
+            if item.status == .working {
+                HStack(spacing: 3.5) {
+                    Text(en ? "Stop" : "中断")
+                        .font(.system(size: 10.5, weight: .medium))
+                    Text("^C")
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .opacity(0.75)
+                }
+                .foregroundStyle(stopFg)
+                .padding(.horizontal, 6.5)
+                .frame(height: 18)
+                .background(
+                    btnShape
+                        .fill(stopBg)
+                        .overlay(
+                            btnShape
+                                .strokeBorder(stopFg.opacity(0.25), lineWidth: 1)
+                        )
+                )
+                .overlay {
+                    PointingHandCursorOverlay(
+                        tooltip: en
+                            ? "Send Esc / Ctrl+C to interrupt current turn without closing session"
+                            : "发送 Esc / Ctrl+C 中断当前执行轮次（不关闭会话窗口）",
+                        onHoverChange: { hovering in
+                            if hovering {
+                                isKeyboardNavigationActive = false
+                            }
+                            hoveredInterruptID = hovering ? item.id : (hoveredInterruptID == item.id ? nil : hoveredInterruptID)
+                        },
+                        onClick: {
+                            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                                hoveredInterruptID = nil
+                                expandedReplyAgentID = nil
+                                focusedReplyAgentID = nil
+                                model.interruptAgentSession(item)
+                            }
+                        }
+                    )
+                }
+            }
+
+            HStack(spacing: 3) {
+                Text("/")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
+                Text(
+                    item.status == .working
+                        ? (en ? "Reply" : "回复")
+                        : (en ? "Reply" : "快捷回复")
+                )
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(replyFg)
+            }
+            .padding(.horizontal, 6.5)
+            .frame(height: 18)
+            .background(
+                btnShape
+                    .fill(replyBg)
+                    .overlay(
+                        btnShape
+                            .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
+                    )
+            )
+            .overlay {
+                PointingHandCursorOverlay(
+                    tooltip: en ? "Type a custom reply to \(item.terminalHost.displayName)" : "输入自定义回复发送至 \(item.terminalHost.displayName)",
+                    onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
+                        hoveredReplyToggleID = hovering ? item.id : (hoveredReplyToggleID == item.id ? nil : hoveredReplyToggleID)
+                    },
+                    onClick: {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                            if expandedReplyAgentID == item.id || focusedReplyAgentID == item.id {
+                                expandedReplyAgentID = nil
+                                focusedReplyAgentID = nil
+                            } else {
+                                expandedReplyAgentID = item.id
+                                focusedReplyAgentID = item.id
+                            }
+                        }
+                    }
+                )
+            }
+        }
     }
 
     private func benchoGitDiffChip(diff: GitDiffSummary, dark: Bool) -> some View {
         let en = model.language == .english
-        let addColor = dark
-            ? Color(red: 0.28, green: 0.88, blue: 0.58)
-            : Color(red: 0.08, green: 0.56, blue: 0.34)
-        let delColor = dark
-            ? Color(red: 0.98, green: 0.44, blue: 0.48)
-            : Color(red: 0.82, green: 0.20, blue: 0.26)
+        let addColor = FlatPalette.diffAddForeground(dark: dark)
+        let delColor = FlatPalette.diffDeleteForeground(dark: dark)
 
-        return HStack(spacing: 3) {
+        return HStack(spacing: 3.5) {
             if diff.insertions > 0 || diff.deletions == 0 {
                 Text("+\(diff.insertions)")
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
                     .foregroundStyle(addColor)
                     .monospacedDigit()
             }
             if diff.deletions > 0 {
                 Text("-\(diff.deletions)")
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
                     .foregroundStyle(delColor)
                     .monospacedDigit()
             }
@@ -1549,23 +1789,30 @@ struct AgentMeterPanel: View {
 
     private func benchoCacheWarmChip(remainingSeconds: Int, dark: Bool) -> some View {
         let en = model.language == .english
-        let isExpiringSoon = remainingSeconds <= 90
+        let isExpiringSoon = remainingSeconds <= 60
         let mins = remainingSeconds / 60
         let secs = remainingSeconds % 60
         let timeStr = String(format: "%d:%02d", mins, secs)
 
+        let dotColor: Color = isExpiringSoon
+            ? FlatPalette.amberAlertForeground(dark: dark)
+            : FlatPalette.softGoodForeground(dark: dark)
         let tintColor: Color = isExpiringSoon
-            ? (dark ? Color(red: 0.98, green: 0.68, blue: 0.22) : Color(red: 0.84, green: 0.44, blue: 0.06))
-            : (dark ? Color(red: 0.24, green: 0.86, blue: 0.62) : Color(red: 0.08, green: 0.56, blue: 0.36))
+            ? FlatPalette.amberAlertForeground(dark: dark)
+            : FlatPalette.inkSecondary(dark: dark)
 
-        return HStack(spacing: 3) {
-            Image(systemName: "flame.fill")
-                .font(.system(size: 8.5, weight: .semibold))
+        return HStack(spacing: 3.5) {
+            Circle()
+                .fill(dotColor)
+                .frame(width: 5, height: 5)
+
+            Text(en ? "Cache" : "缓存")
+                .font(.system(size: 10.5, weight: .regular, design: .monospaced))
                 .foregroundStyle(tintColor)
 
             Text(timeStr)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(isExpiringSoon ? tintColor : FlatPalette.inkSecondary(dark: dark))
+                .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                .foregroundStyle(tintColor)
                 .monospacedDigit()
                 .contentTransition(.numericText())
         }
@@ -1577,28 +1824,29 @@ struct AgentMeterPanel: View {
     }
 
     private func benchoContextMeterChip(ctx: Int, familyColor: Color, dark: Bool) -> some View {
-        let isHighCtx = ctx >= 80
-        let isMidCtx = ctx >= 55 && ctx < 80
-        let activeColor: Color = isHighCtx
-            ? Color(red: 0.96, green: 0.42, blue: 0.22)
-            : (isMidCtx ? Color(red: 0.94, green: 0.66, blue: 0.18) : familyColor)
-        let emptySegColor = dark ? Color.white.opacity(0.14) : Color.black.opacity(0.11)
+        let isWarningCtx = ctx >= 60
+        let activeColor: Color = isWarningCtx
+            ? FlatPalette.amberAlertForeground(dark: dark)
+            : FlatPalette.accent(dark: dark)
+        let textColor: Color = isWarningCtx
+            ? FlatPalette.amberAlertForeground(dark: dark)
+            : FlatPalette.inkSecondary(dark: dark)
+        let emptySegColor = dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08)
         let filledSegments = max(1, min(5, Int(ceil(Double(max(1, ctx)) / 20.0))))
 
         return HStack(spacing: 4.5) {
-            // Bencho 5-segment micro bar (.ctx-bar)
             HStack(spacing: 1.5) {
                 ForEach(0..<5, id: \.self) { segIdx in
                     let lit = segIdx < filledSegments && ctx > 0
-                    RoundedRectangle(cornerRadius: 1.2, style: .continuous)
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
                         .fill(lit ? activeColor : emptySegColor)
-                        .frame(width: 2.5, height: lit ? 8.5 : 6.5)
+                        .frame(width: 2.5, height: 8)
                 }
             }
 
             Text("\(ctx)%")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(isHighCtx ? activeColor : FlatPalette.inkSecondary(dark: dark))
+                .font(.system(size: 10.5, weight: isWarningCtx ? .medium : .regular, design: .monospaced))
+                .foregroundStyle(textColor)
                 .monospacedDigit()
         }
         .help(model.language == .english ? "Context window \(ctx)% used" : "上下文窗口已使用 \(ctx)%")
@@ -1606,22 +1854,21 @@ struct AgentMeterPanel: View {
 
     private func inlineApprovalReserveBar(dark: Bool) -> some View {
         let en = model.language == .english
-        let amber = dark
-            ? Color(red: 0.98, green: 0.70, blue: 0.24)
-            : Color(red: 0.72, green: 0.36, blue: 0.04)
-        return HStack(spacing: 5.5) {
+        let amber = FlatPalette.amberAlertForeground(dark: dark)
+        return HStack(spacing: 5) {
             Circle()
                 .fill(amber)
-                .frame(width: 5, height: 5)
-            Text(en ? "Awaiting confirmation" : "等待权限确认")
-                .font(.system(size: 10.5, weight: .semibold))
+                .frame(width: 6, height: 6)
+            Text(en ? "Awaiting confirmation" : "等待终端权限确认")
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(amber)
+                .lineLimit(1)
             Spacer(minLength: 4)
-            // Space reserved for the Bencho action dock overlay
+            // Space reserved for the Stageshow .ss-btn-row overlay
             Color.clear
-                .frame(width: 224, height: 26)
+                .frame(width: 214, height: 24)
         }
-        .padding(.leading, 4)
+        .padding(.top, 1)
     }
 
     private func inlineWorkingReserveBar(
@@ -1630,34 +1877,31 @@ struct AgentMeterPanel: View {
         dark: Bool
     ) -> some View {
         let en = model.language == .english
+        let hostName = item.terminalHost.displayName
         let amber = FlatPalette.amberAlertForeground(dark: dark)
         let labelColor = isLongRunning ? amber : FlatPalette.inkSecondary(dark: dark)
         return HStack(spacing: 5.5) {
             if isLongRunning {
                 Image(systemName: "clock.badge.exclamationmark")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(amber)
-            } else {
-                Circle()
-                    .fill(FlatPalette.blue)
-                    .frame(width: 5, height: 5)
             }
             Text(
                 isLongRunning
                     ? (en ? "Long-running task · check if stalled" : "长时运行任务 · 请留意是否卡死")
-                    : (en ? "Running task in Rex" : "正在 Rex 中执行任务")
+                    : (en ? "Running task in \(hostName)" : "正在 \(hostName) 中执行任务")
             )
-            .font(.system(size: 10.5, weight: isLongRunning ? .semibold : .medium))
+            .font(.system(size: 11.5, weight: isLongRunning ? .medium : .regular))
             .foregroundStyle(labelColor)
             .lineLimit(1)
             .truncationMode(.tail)
 
             Spacer(minLength: 4)
-            // Space reserved for the working action dock overlay
+            // Space reserved for the Stageshow .ss-btn-row overlay
             Color.clear
-                .frame(width: 118, height: 26)
+                .frame(width: 116, height: 24)
         }
-        .padding(.leading, 4)
+        .padding(.top, 1)
     }
 
     private func inlineWorkingActionButtons(
@@ -1668,35 +1912,33 @@ struct AgentMeterPanel: View {
         let en = model.language == .english
         let isInterruptHovered = hoveredInterruptID == item.id
         let isReplyToggleHovered = hoveredReplyToggleID == item.id
-        let familyColor = item.family.accentColor(dark: dark)
+        let btnShape = RoundedRectangle(cornerRadius: 6, style: .continuous)
 
         let stopFg = FlatPalette.dangerInterruptForeground(dark: dark)
         let stopBg = FlatPalette.dangerInterruptBackground(dark: dark, hovered: isInterruptHovered)
 
-        let replyFg = (showInlineReply || isReplyToggleHovered) ? familyColor : FlatPalette.inkSecondary(dark: dark)
-        let replyBg = (showInlineReply || isReplyToggleHovered)
-            ? familyColor.opacity(dark ? 0.20 : 0.12)
-            : (dark ? Color.white.opacity(0.05) : Color.white)
+        let replyBg = FlatPalette.raisedBackground(dark: dark, hovered: showInlineReply || isReplyToggleHovered)
+        let replyFg = FlatPalette.inkPrimary(dark: dark)
 
-        return HStack(spacing: 3) {
+        return HStack(spacing: 5) {
             // 1. Interrupt Button: Stop ^C / 中断 ^C
-            HStack(spacing: 4) {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 8, weight: .bold))
+            HStack(spacing: 5) {
                 Text(en ? "Stop" : "中断")
-                    .font(.system(size: 10.5, weight: .semibold))
-                kbdBadge("^C", tint: stopFg, dark: dark)
+                    .font(.system(size: 11.5, weight: .medium))
+                Text("^C")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .opacity(0.75)
             }
             .foregroundStyle(stopFg)
-            .padding(.leading, 8)
-            .padding(.trailing, 6)
-            .padding(.vertical, 3.5)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .frame(height: 24)
             .background(
-                Capsule()
+                btnShape
                     .fill(stopBg)
                     .overlay(
-                        Capsule()
-                            .strokeBorder(stopFg.opacity(dark ? 0.38 : 0.28), lineWidth: 1)
+                        btnShape
+                            .strokeBorder(stopFg.opacity(0.25), lineWidth: 1)
                     )
             )
             .overlay {
@@ -1705,6 +1947,9 @@ struct AgentMeterPanel: View {
                         ? "Send Esc / Ctrl+C to interrupt current turn without closing session"
                         : "发送 Esc / Ctrl+C 中断当前执行轮次（不关闭会话窗口）",
                     onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
                         hoveredInterruptID = hovering ? item.id : (hoveredInterruptID == item.id ? nil : hoveredInterruptID)
                     },
                     onClick: {
@@ -1718,26 +1963,28 @@ struct AgentMeterPanel: View {
                 )
             }
 
-            // 2. Custom Reply Toggle Button
-            Image(systemName: "text.bubble")
-                .font(.system(size: 10, weight: .semibold))
+            // 2. Custom Reply Toggle Button: "/"
+            Text("/")
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
                 .foregroundStyle(replyFg)
-                .frame(width: 24, height: 21)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .frame(height: 24)
                 .background(
-                    Capsule()
+                    btnShape
                         .fill(replyBg)
                         .overlay(
-                            Capsule()
-                                .strokeBorder(
-                                    showInlineReply ? familyColor.opacity(0.4) : FlatPalette.hairlineBorder(dark: dark),
-                                    lineWidth: 1
-                                )
+                            btnShape
+                                .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
                         )
                 )
                 .overlay {
                     PointingHandCursorOverlay(
-                        tooltip: en ? "Type a custom reply to Rex" : "输入自定义回复发送至 Rex",
+                        tooltip: en ? "Type a custom reply to \(item.terminalHost.displayName)" : "输入自定义回复发送至 \(item.terminalHost.displayName)",
                         onHoverChange: { hovering in
+                            if hovering {
+                                isKeyboardNavigationActive = false
+                            }
                             hoveredReplyToggleID = hovering ? item.id : (hoveredReplyToggleID == item.id ? nil : hoveredReplyToggleID)
                         },
                         onClick: {
@@ -1754,31 +2001,6 @@ struct AgentMeterPanel: View {
                     )
                 }
         }
-        .padding(2.5)
-        .background(
-            Capsule()
-                .fill(FlatPalette.trackBackground(dark: dark))
-                .overlay(
-                    Capsule()
-                        .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
-                )
-        )
-    }
-
-    private func kbdBadge(_ text: String, tint: Color, dark: Bool) -> some View {
-        Text(text)
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-            .foregroundStyle(tint.opacity(0.9))
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
-            .background(
-                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                    .fill(dark ? Color.white.opacity(0.08) : Color.black.opacity(0.055))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                            .strokeBorder(tint.opacity(0.22), lineWidth: 1)
-                    )
-            )
     }
 
     private func inlineApprovalActionButtons(
@@ -1791,55 +2013,40 @@ struct AgentMeterPanel: View {
         dark: Bool
     ) -> some View {
         let en = model.language == .english
-        let familyColor = item.family.accentColor(dark: dark)
-        let greenFg = dark
-            ? Color(red: 0.24, green: 0.88, blue: 0.54)
-            : Color(red: 0.06, green: 0.50, blue: 0.24)
-        let greenBg = dark
-            ? (isApprove1Hovered ? Color(red: 0.14, green: 0.32, blue: 0.21) : Color(red: 0.10, green: 0.23, blue: 0.15))
-            : (isApprove1Hovered ? Color(red: 0.82, green: 0.95, blue: 0.86) : Color(red: 0.90, green: 0.97, blue: 0.92))
+        let btnShape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let greenFg = FlatPalette.softGoodForeground(dark: dark)
+        let greenBg = FlatPalette.softGoodBackground(dark: dark, hovered: isApprove1Hovered)
+        let raisedFg = FlatPalette.inkPrimary(dark: dark)
 
-        let opt2Fg = FlatPalette.inkPrimary(dark: dark)
-        let opt2Bg = dark
-            ? (isApprove2Hovered ? Color.white.opacity(0.14) : Color.white.opacity(0.06))
-            : (isApprove2Hovered ? Color.black.opacity(0.09) : Color.white)
-
-        let denyFg = isDenyHovered
-            ? Color(red: 0.94, green: 0.30, blue: 0.36)
-            : FlatPalette.inkSecondary(dark: dark)
-        let denyBg = dark
-            ? (isDenyHovered ? Color(red: 0.32, green: 0.13, blue: 0.15) : Color.white.opacity(0.04))
-            : (isDenyHovered ? Color(red: 1.0, green: 0.91, blue: 0.92) : Color.white)
-
-        let replyFg = (showInlineReply || isReplyToggleHovered) ? familyColor : FlatPalette.inkSecondary(dark: dark)
-        let replyBg = (showInlineReply || isReplyToggleHovered)
-            ? familyColor.opacity(dark ? 0.20 : 0.12)
-            : (dark ? Color.white.opacity(0.05) : Color.white)
-
-        // Bencho-style unified pill action dock (.pill-track)
-        return HStack(spacing: 3) {
-            // 1. Primary Approve: Allow [⏎] / 允许 [⏎]
-            HStack(spacing: 4) {
+        // Stageshow .ss-btn-row: independent 6pt rounded buttons with 5pt spacing
+        return HStack(spacing: 5) {
+            // 1. Primary Approve: Allow ⏎ / 允许 ⏎
+            HStack(spacing: 5) {
                 Text(en ? "Allow" : "允许")
-                    .font(.system(size: 10.5, weight: .semibold))
-                kbdBadge("⏎", tint: greenFg, dark: dark)
+                    .font(.system(size: 11.5, weight: .medium))
+                Text("⏎")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .opacity(0.75)
             }
             .foregroundStyle(greenFg)
-            .padding(.leading, 8.5)
-            .padding(.trailing, 6)
-            .padding(.vertical, 3.5)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .frame(height: 24)
             .background(
-                Capsule()
+                btnShape
                     .fill(greenBg)
                     .overlay(
-                        Capsule()
-                            .strokeBorder(greenFg.opacity(dark ? 0.38 : 0.28), lineWidth: 1)
+                        btnShape
+                            .strokeBorder(greenFg.opacity(0.25), lineWidth: 1)
                     )
             )
             .overlay {
                 PointingHandCursorOverlay(
                     tooltip: en ? "Send Enter to approve (Option 1)" : "发送回车确认允许（选项 1）",
                     onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
                         hoveredApprovePrimaryID = hovering ? item.id : (hoveredApprovePrimaryID == item.id ? nil : hoveredApprovePrimaryID)
                     },
                     onClick: {
@@ -1850,49 +2057,55 @@ struct AgentMeterPanel: View {
                 )
             }
 
-            // 2. Option 2: [2]
-            HStack(spacing: 3) {
-                kbdBadge("2", tint: opt2Fg, dark: dark)
-            }
-            .padding(.horizontal, 4.5)
-            .padding(.vertical, 3.5)
-            .background(
-                Capsule()
-                    .fill(opt2Bg)
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
-                    )
-            )
-            .overlay {
-                PointingHandCursorOverlay(
-                    tooltip: en ? "Select Option 2 and confirm (e.g. Always allow)" : "选择第 2 项并确认（如：始终允许 / 本次会话不再询问）",
-                    onHoverChange: { hovering in
-                        hoveredApproveSecondaryID = hovering ? item.id : (hoveredApproveSecondaryID == item.id ? nil : hoveredApproveSecondaryID)
-                    },
-                    onClick: {
-                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
-                            model.respondToPermission(item, choice: .approveSecondary)
-                        }
-                    }
+            // 2. Option 2: 2
+            Text("2")
+                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(raisedFg)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .frame(height: 24)
+                .background(
+                    btnShape
+                        .fill(FlatPalette.raisedBackground(dark: dark, hovered: isApprove2Hovered))
+                        .overlay(
+                            btnShape
+                                .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
+                        )
                 )
-            }
+                .overlay {
+                    PointingHandCursorOverlay(
+                        tooltip: en ? "Select Option 2 and confirm (e.g. Always allow)" : "选择第 2 项并确认（如：始终允许 / 本次会话不再询问）",
+                        onHoverChange: { hovering in
+                            if hovering {
+                                isKeyboardNavigationActive = false
+                            }
+                            hoveredApproveSecondaryID = hovering ? item.id : (hoveredApproveSecondaryID == item.id ? nil : hoveredApproveSecondaryID)
+                        },
+                        onClick: {
+                            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                                model.respondToPermission(item, choice: .approveSecondary)
+                            }
+                        }
+                    )
+                }
 
-            // 3. Deny: Deny [Esc] / 拒绝 [Esc]
-            HStack(spacing: 4) {
+            // 3. Deny: Deny Esc / 拒绝 Esc
+            HStack(spacing: 5) {
                 Text(en ? "Deny" : "拒绝")
-                    .font(.system(size: 10.5, weight: .medium))
-                kbdBadge("Esc", tint: denyFg, dark: dark)
+                    .font(.system(size: 11.5, weight: .medium))
+                Text("Esc")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .opacity(0.75)
             }
-            .foregroundStyle(denyFg)
-            .padding(.leading, 7.5)
-            .padding(.trailing, 5.5)
-            .padding(.vertical, 3.5)
+            .foregroundStyle(raisedFg)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .frame(height: 24)
             .background(
-                Capsule()
-                    .fill(denyBg)
+                btnShape
+                    .fill(FlatPalette.raisedBackground(dark: dark, hovered: isDenyHovered))
                     .overlay(
-                        Capsule()
+                        btnShape
                             .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
                     )
             )
@@ -1900,6 +2113,9 @@ struct AgentMeterPanel: View {
                 PointingHandCursorOverlay(
                     tooltip: en ? "Send deny or Esc to cancel" : "发送拒绝指令或 Esc 取消",
                     onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
                         hoveredDenyID = hovering ? item.id : (hoveredDenyID == item.id ? nil : hoveredDenyID)
                     },
                     onClick: {
@@ -1910,26 +2126,28 @@ struct AgentMeterPanel: View {
                 )
             }
 
-            // 4. Custom Reply Toggle Button
-            Image(systemName: "text.bubble")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(replyFg)
-                .frame(width: 24, height: 21)
+            // 4. Custom Reply Toggle Button: "/"
+            Text("/")
+                .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                .foregroundStyle(raisedFg)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .frame(height: 24)
                 .background(
-                    Capsule()
-                        .fill(replyBg)
+                    btnShape
+                        .fill(FlatPalette.raisedBackground(dark: dark, hovered: showInlineReply || isReplyToggleHovered))
                         .overlay(
-                            Capsule()
-                                .strokeBorder(
-                                    showInlineReply ? familyColor.opacity(0.4) : FlatPalette.hairlineBorder(dark: dark),
-                                    lineWidth: 1
-                                )
+                            btnShape
+                                .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
                         )
                 )
                 .overlay {
                     PointingHandCursorOverlay(
-                        tooltip: en ? "Type a custom reply to Rex" : "输入自定义回复发送至 Rex",
+                        tooltip: en ? "Type a custom reply to \(item.terminalHost.displayName)" : "输入自定义回复发送至 \(item.terminalHost.displayName)",
                         onHoverChange: { hovering in
+                            if hovering {
+                                isKeyboardNavigationActive = false
+                            }
                             hoveredReplyToggleID = hovering ? item.id : (hoveredReplyToggleID == item.id ? nil : hoveredReplyToggleID)
                         },
                         onClick: {
@@ -1946,76 +2164,38 @@ struct AgentMeterPanel: View {
                     )
                 }
         }
-        .padding(2.5)
-        .background(
-            Capsule()
-                .fill(FlatPalette.trackBackground(dark: dark))
-                .overlay(
-                    Capsule()
-                        .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
-                )
-        )
     }
 
-    private func rowBorderColor(for item: AgentActivityItem, isHovered: Bool, isSelected: Bool, familyColor: Color, dark: Bool) -> Color {
-        if isSelected {
-            if item.status == .needsInput {
-                return Color(red: 0.98, green: 0.66, blue: 0.18).opacity(dark ? 0.78 : 0.68)
-            }
-            return familyColor.opacity(dark ? 0.65 : 0.52)
-        }
-        if item.status == .needsInput {
-            return Color(red: 0.98, green: 0.66, blue: 0.18).opacity(dark ? 0.58 : 0.48)
-        }
-        if item.isUnreadCompletion {
-            return Color(red: 1.0, green: 0.22, blue: 0.44).opacity(dark ? 0.45 : 0.34)
-        }
+    private func rowBorderColor(
+        for item: AgentActivityItem,
+        isLead: Bool,
+        isHovered: Bool,
+        isSelected: Bool,
+        familyColor: Color,
+        dark: Bool
+    ) -> Color {
         if isHovered {
-            return familyColor.opacity(dark ? 0.42 : 0.32)
+            return familyColor.opacity(dark ? 0.72 : 0.62)
+        }
+        if isSelected {
+            return familyColor.opacity(dark ? 0.56 : 0.48)
+        }
+        if isLead || item.status == .needsInput || (item.status == .working && item.isLongRunningWorking()) {
+            return Color(red: 245.0 / 255, green: 158.0 / 255, blue: 11.0 / 255).opacity(0.28)
         }
         return FlatPalette.hairlineBorder(dark: dark)
-    }
-
-    private func statusBadgeFill(_ status: AgentTaskStatus, dark: Bool) -> Color {
-        switch status {
-        case .idle:
-            return dark ? Color.white.opacity(0.04) : Color.black.opacity(0.035)
-        case .completed:
-            return dark ? Color(red: 0.08, green: 0.22, blue: 0.14) : Color(red: 0.90, green: 0.97, blue: 0.92)
-        case .needsInput:
-            return dark ? Color(red: 0.28, green: 0.18, blue: 0.07) : Color(red: 1.0, green: 0.95, blue: 0.86)
-        case .working:
-            return dark ? Color(red: 0.09, green: 0.20, blue: 0.34) : Color(red: 0.90, green: 0.95, blue: 1.0)
-        }
-    }
-
-    private func statusBadgeStroke(_ status: AgentTaskStatus, dark: Bool) -> Color {
-        switch status {
-        case .idle:
-            return FlatPalette.hairlineBorder(dark: dark)
-        case .completed:
-            return agentStatusColor(.completed, dark: dark).opacity(dark ? 0.32 : 0.22)
-        case .needsInput:
-            return agentStatusColor(.needsInput, dark: dark).opacity(dark ? 0.38 : 0.28)
-        case .working:
-            return agentStatusColor(.working, dark: dark).opacity(dark ? 0.32 : 0.22)
-        }
     }
 
     private func agentStatusColor(_ status: AgentTaskStatus, dark: Bool) -> Color {
         switch status {
         case .needsInput:
-            return dark
-                ? Color(red: 0.98, green: 0.70, blue: 0.24)
-                : Color(red: 0.82, green: 0.44, blue: 0.06)
+            return FlatPalette.amberAlertForeground(dark: dark)
         case .working:
-            return FlatPalette.blue
+            return FlatPalette.accentText(dark: dark)
         case .completed:
-            return dark
-                ? Color(red: 0.34, green: 0.86, blue: 0.58)
-                : Color(red: 0.10, green: 0.58, blue: 0.34)
+            return FlatPalette.softGoodForeground(dark: dark)
         case .idle:
-            return .secondary
+            return FlatPalette.inkSecondary(dark: dark)
         }
     }
 
@@ -2054,20 +2234,43 @@ struct AgentMeterPanel: View {
 
     private func footer(dark: Bool) -> some View {
         let en = model.language == .english
-        return HStack {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(FlatPalette.blue)
-                    .frame(width: 5.5, height: 5.5)
-                Text(en ? "Monitoring Codex · Claude · Copilot · Antigravity" : "实时监控 Codex · Claude · Copilot · Antigravity")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.secondary)
+        return HStack(spacing: 6) {
+            HStack(spacing: 8) {
+                footerShortcutItem(key: "↑↓", label: en ? "Select" : "选择", dark: dark)
+                footerShortcutItem(key: "←→", label: en ? "Filter" : "筛选", dark: dark)
+                footerShortcutItem(key: "⏎", label: en ? "Approve/Open" : "放行/跳转", dark: dark)
+                footerShortcutItem(key: "/", label: en ? "Reply" : "回复", dark: dark)
+                footerShortcutItem(key: "⌥↵", label: en ? "Urgent" : "直达紧急", dark: dark)
             }
-            Spacer()
-            FlatIconButton(icon: "power", size: 28, iconSize: 12, tooltip: en ? "Quit Agent Meter" : "退出应用") {
+            Spacer(minLength: 4)
+            FlatIconButton(icon: "power", size: 22, iconSize: 11, tooltip: en ? "Quit Agent Meter" : "退出应用") {
                 NSApplication.shared.terminate(nil)
             }
         }
+    }
+
+    private func footerShortcutItem(key: String, label: String, dark: Bool) -> some View {
+        HStack(spacing: 3.5) {
+            Text(key)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
+                .padding(.horizontal, 4.5)
+                .padding(.vertical, 1)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(FlatPalette.raisedBackground(dark: dark))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
+                        )
+                        .shadow(color: .black.opacity(dark ? 0.28 : 0.08), radius: 0, x: 0, y: 1)
+                )
+            Text(label)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
+                .lineLimit(1)
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     // MARK: - Quick Launch & History Resume Section
@@ -2158,14 +2361,15 @@ struct AgentMeterPanel: View {
 
             // 3. Historical Sessions List
             if items.isEmpty {
+                let targetHostName = model.resolvedLaunchTerminalHost().displayName
                 emptyStateCard(
                     icon: "clock.arrow.circlepath",
                     title: hasSearchText
                         ? (en ? "No matching historical sessions" : "没有找到匹配的历史会话")
                         : (en ? "No historical sessions found" : "暂未发现本地历史会话记录"),
                     subtitle: en
-                        ? "Supports resuming Claude Code, Codex CLI, Copilot CLI & Antigravity conversations in Rex"
-                        : "自动扫描本机 Claude Code、Codex CLI、Copilot CLI 与 Antigravity 的历史会话记录"
+                        ? "Supports resuming Claude Code, Codex CLI, Copilot CLI & Antigravity conversations in \(targetHostName)"
+                        : "自动扫描本机 Claude Code、Codex CLI、Copilot CLI 与 Antigravity 的历史会话记录，支持在 \(targetHostName) 中一键恢复"
                 )
             } else {
                 VStack(spacing: 8) {
@@ -2251,6 +2455,7 @@ struct AgentMeterPanel: View {
         .overlay {
             PointingHandCursorOverlay(
                 onClick: {
+                    resetHoverAndKeyboardNavigation()
                     withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
                         selectedHistoryFamily = family
                     }
@@ -2270,7 +2475,7 @@ struct AgentMeterPanel: View {
         let isDeleteHovered = hoveredHistoryDeleteID == item.id
         let isConfirmHovered = hoveredHistoryConfirmDeleteID == item.id
         let isCancelHovered = hoveredHistoryCancelDeleteID == item.id
-        let isSelected = selectedHistoryID == item.id
+        let isSelected = isKeyboardNavigationActive && selectedHistoryID == item.id
         let isHovered = hoveredHistoryID == item.id || isDeleteHovered || isConfirmHovered || isCancelHovered || isConfirmingDelete || isSelected
         let accent = item.family.accentColor(dark: dark)
         let isOnline = item.onlineActivityID != nil
@@ -2278,40 +2483,41 @@ struct AgentMeterPanel: View {
         let timeStr = formatRelativeAgo(elapsed, en: en)
         let displayPath = abbreviateHomePath(item.cwdPath)
 
-        return HStack(alignment: .center, spacing: 11) {
+        return HStack(alignment: .center, spacing: 10) {
             AgentFamilyBadgeIcon(
                 family: item.family,
                 dark: dark,
                 highlighted: isHovered || isOnline,
-                size: 32
+                size: 30
             )
             .help(item.family.badgeTitle)
 
-            VStack(alignment: .leading, spacing: 4.5) {
+            VStack(alignment: .leading, spacing: 4) {
                 // Row 1: Session Title + Top-Right Action Pill & Delete Button
                 HStack(alignment: .center, spacing: 6) {
                     Text(item.title)
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .foregroundStyle(.primary)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
                         .lineLimit(1)
                         .truncationMode(.tail)
 
                     Spacer(minLength: 6)
 
                     if isOnline {
+                        let goodFg = FlatPalette.softGoodForeground(dark: dark)
                         HStack(spacing: 3.5) {
                             Circle()
-                                .fill(Color(red: 0.16, green: 0.78, blue: 0.48))
+                                .fill(goodFg)
                                 .frame(width: 5, height: 5)
                             Text(en ? "Online ↗" : "在线 ↗")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: 10.5, weight: .semibold))
                         }
-                        .foregroundStyle(dark ? Color(red: 0.34, green: 0.88, blue: 0.62) : Color(red: 0.08, green: 0.56, blue: 0.36))
+                        .foregroundStyle(goodFg)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
                             Capsule()
-                                .fill(dark ? Color(red: 0.10, green: 0.25, blue: 0.18) : Color(red: 0.88, green: 0.97, blue: 0.92))
+                                .fill(FlatPalette.softGoodBackground(dark: dark))
                         )
                         .fixedSize(horizontal: true, vertical: false)
                     } else if isConfirmingDelete {
@@ -2321,18 +2527,18 @@ struct AgentMeterPanel: View {
                     } else {
                         HStack(spacing: 3) {
                             Text(en ? "Resume" : "恢复")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: 10.5, weight: .semibold))
                             Image(systemName: "arrow.up.right")
                                 .font(.system(size: 8.5, weight: .bold))
                         }
-                        .foregroundStyle(isHovered && !isDeleteHovered ? accent : .secondary)
+                        .foregroundStyle(isHovered && !isDeleteHovered ? accent : FlatPalette.inkSecondary(dark: dark))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(
                             Capsule()
                                 .fill(
                                     isHovered && !isDeleteHovered
-                                        ? accent.opacity(dark ? 0.20 : 0.12)
+                                        ? accent.opacity(dark ? 0.18 : 0.11)
                                         : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
                                 )
                         )
@@ -2348,22 +2554,22 @@ struct AgentMeterPanel: View {
                 HStack(alignment: .center, spacing: 5) {
                     HStack(spacing: 3.5) {
                         Image(systemName: "folder")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(accent.opacity(0.85))
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
                         Text(displayPath)
-                            .font(.system(size: 10, weight: .regular, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
 
                     if let branch = item.gitBranch, !branch.isEmpty {
                         Text("·")
-                            .font(.system(size: 10.5, weight: .bold))
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
                         Text(branch)
-                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
                     }
@@ -2371,26 +2577,33 @@ struct AgentMeterPanel: View {
                     Spacer(minLength: 6)
 
                     Text(timeStr)
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
                         .monospacedDigit()
                         .fixedSize(horizontal: true, vertical: false)
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
+            let targetHostName: String = {
+                if let onlineID = item.onlineActivityID,
+                   let live = model.agentActivities.first(where: { $0.id == onlineID }) {
+                    return live.terminalHost.displayName
+                }
+                return model.resolvedLaunchTerminalHost().displayName
+            }()
             PointingHandCursorOverlay(
                 tooltip: isOnline
-                    ? (en ? "Session is already active — click to focus Rex window (\(displayPath))" : "该会话当前已在线，点击直接跳转到对应 Rex 窗口（\(displayPath)）")
-                    : (en ? "Resume session in a new Rex tab (\(displayPath))" : "在 Rex 新建 Tab 恢复该历史会话（\(displayPath)）"),
+                    ? (en ? "Session is already active — click to focus \(targetHostName) window (\(displayPath))" : "该会话当前已在线，点击直接跳转到对应 \(targetHostName) 窗口（\(displayPath)）")
+                    : (en ? "Resume session in a new \(targetHostName) tab (\(displayPath))" : "在 \(targetHostName) 新建 Tab 恢复该历史会话（\(displayPath)）"),
                 onHoverChange: { hovering in
-                    hoveredHistoryID = hovering ? item.id : (hoveredHistoryID == item.id ? nil : hoveredHistoryID)
                     if hovering {
-                        selectedHistoryID = item.id
+                        isKeyboardNavigationActive = false
                     }
+                    hoveredHistoryID = hovering ? item.id : (hoveredHistoryID == item.id ? nil : hoveredHistoryID)
                 },
                 onClick: {
                     if isConfirmingDelete {
@@ -2402,6 +2615,7 @@ struct AgentMeterPanel: View {
                     selectedHistoryID = item.id
                     confirmingHistoryDeleteID = nil
                     isHistorySearchFocused = false
+                    resetHoverAndKeyboardNavigation()
                     showingQuickLaunch = false
                     model.resumeOrFocusHistoricalSession(item)
                 }
@@ -2417,12 +2631,12 @@ struct AgentMeterPanel: View {
                         dark: dark
                     )
                     .padding(.top, 9)
-                    .padding(.trailing, 11)
+                    .padding(.trailing, 10)
                     .transition(.opacity.combined(with: .scale(scale: 0.94, anchor: .trailing)))
                 } else {
                     deleteHistoryButton(item: item, isDeleteHovered: isDeleteHovered, isRowHovered: isHovered, dark: dark)
                         .padding(.top, 9.5)
-                        .padding(.trailing, 11)
+                        .padding(.trailing, 10)
                 }
             }
         }
@@ -2433,9 +2647,9 @@ struct AgentMeterPanel: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(
                             (isDeleteHovered || isConfirmingDelete)
-                                ? Color(red: 0.96, green: 0.32, blue: 0.38).opacity(dark ? 0.52 : 0.42)
-                                : (isHovered ? accent.opacity(isSelected ? (dark ? 0.58 : 0.46) : (dark ? 0.42 : 0.32)) : FlatPalette.hairlineBorder(dark: dark)),
-                            lineWidth: (isConfirmingDelete || isSelected) ? 1.3 : 1
+                                ? FlatPalette.dangerInterruptForeground(dark: dark).opacity(dark ? 0.42 : 0.34)
+                                : (isHovered ? accent.opacity(dark ? 0.62 : 0.52) : FlatPalette.hairlineBorder(dark: dark)),
+                            lineWidth: (isHovered || isDeleteHovered || isConfirmingDelete) ? 1.25 : 1
                         )
                 )
         )
@@ -2456,7 +2670,7 @@ struct AgentMeterPanel: View {
             .font(.system(size: 9.5, weight: .semibold))
             .foregroundStyle(
                 isDeleteHovered
-                    ? Color(red: 0.96, green: 0.32, blue: 0.38)
+                    ? FlatPalette.dangerInterruptForeground(dark: dark)
                     : Color.secondary.opacity(isRowHovered ? 0.85 : 0.5)
             )
             .frame(width: 22, height: 20)
@@ -2464,7 +2678,7 @@ struct AgentMeterPanel: View {
                 Capsule()
                     .fill(
                         isDeleteHovered
-                            ? (dark ? Color(red: 0.36, green: 0.14, blue: 0.17) : Color(red: 1.0, green: 0.90, blue: 0.92))
+                            ? FlatPalette.dangerInterruptBackground(dark: dark, hovered: true)
                             : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
                     )
             )
@@ -2472,6 +2686,9 @@ struct AgentMeterPanel: View {
                 PointingHandCursorOverlay(
                     tooltip: en ? "Delete session data" : "删除该条历史会话及本地文件",
                     onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
                         hoveredHistoryDeleteID = hovering ? item.id : (hoveredHistoryDeleteID == item.id ? nil : hoveredHistoryDeleteID)
                     },
                     onClick: {
@@ -2491,12 +2708,8 @@ struct AgentMeterPanel: View {
         dark: Bool
     ) -> some View {
         let en = model.language == .english
-        let redFg = dark
-            ? Color(red: 1.0, green: 0.42, blue: 0.48)
-            : Color(red: 0.84, green: 0.14, blue: 0.22)
-        let redBg = dark
-            ? (isConfirmHovered ? Color(red: 0.48, green: 0.14, blue: 0.19) : Color(red: 0.36, green: 0.12, blue: 0.16))
-            : (isConfirmHovered ? Color(red: 1.0, green: 0.82, blue: 0.85) : Color(red: 1.0, green: 0.90, blue: 0.92))
+        let redFg = FlatPalette.dangerInterruptForeground(dark: dark)
+        let redBg = FlatPalette.dangerInterruptBackground(dark: dark, hovered: isConfirmHovered)
 
         let cancelFg = FlatPalette.inkSecondary(dark: dark)
         let cancelBg = dark
@@ -2526,6 +2739,9 @@ struct AgentMeterPanel: View {
                 PointingHandCursorOverlay(
                     tooltip: en ? "Permanently delete session files from disk" : "确认永久删除该会话及其本地数据文件",
                     onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
                         hoveredHistoryConfirmDeleteID = hovering ? item.id : (hoveredHistoryConfirmDeleteID == item.id ? nil : hoveredHistoryConfirmDeleteID)
                     },
                     onClick: {
@@ -2556,6 +2772,9 @@ struct AgentMeterPanel: View {
                     PointingHandCursorOverlay(
                         tooltip: en ? "Cancel deletion" : "取消删除",
                         onHoverChange: { hovering in
+                            if hovering {
+                                isKeyboardNavigationActive = false
+                            }
                             hoveredHistoryCancelDeleteID = hovering ? item.id : (hoveredHistoryCancelDeleteID == item.id ? nil : hoveredHistoryCancelDeleteID)
                         },
                         onClick: {
@@ -2575,11 +2794,13 @@ struct AgentMeterPanel: View {
         let accent = selectedFamily.accentColor(dark: dark)
 
         return VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(en ? "WORKSPACES (LOCAL & SSH)" : "工作目录与远程 SSH（点击 Agent 启动）")
+            HStack(spacing: 6) {
+                Text(en ? "WORKSPACES (LOCAL & SSH)" : "工作目录与远程 SSH")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Spacer()
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                launchHostQuickSwitchPill(dark: dark)
                 HStack(spacing: 3.5) {
                     Image(systemName: "folder.badge.plus")
                         .font(.system(size: 10, weight: .semibold))
@@ -2603,7 +2824,7 @@ struct AgentMeterPanel: View {
             }
             .padding(.horizontal, 2)
 
-            VStack(spacing: 9) {
+            VStack(spacing: 7) {
                 ForEach(model.recentLaunchWorkspaces) { workspace in
                     workspaceLaunchRow(workspace: workspace, selectedFamily: selectedFamily, dark: dark)
                 }
@@ -2611,110 +2832,184 @@ struct AgentMeterPanel: View {
         }
     }
 
+    private func launchHostQuickSwitchPill(dark: Bool) -> some View {
+        let en = model.language == .english
+        let activeHost = model.resolvedLaunchTerminalHost()
+        return HStack(spacing: 2) {
+            ForEach(TerminalHostKind.allCases) { host in
+                let isSelected = activeHost == host
+                Text(host.displayName)
+                    .font(.system(size: 10, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                    .padding(.horizontal, 6.5)
+                    .padding(.vertical, 3)
+                    .background {
+                        if isSelected {
+                            Capsule()
+                                .fill(FlatPalette.selectedPillBackground(dark: dark))
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(
+                                            dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08),
+                                            lineWidth: 1
+                                        )
+                                )
+                                .shadow(color: .black.opacity(dark ? 0.24 : 0.06), radius: 1.5, x: 0, y: 1)
+                        }
+                    }
+                    .contentShape(Capsule())
+                    .overlay {
+                        PointingHandCursorOverlay(
+                            tooltip: en
+                                ? "Launch new sessions in \(host.displayName)"
+                                : "切换为在 \(host.displayName) 中启动新会话",
+                            onClick: {
+                                withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                                    model.preferredTerminalHost = (host == .ghostty) ? .ghostty : .rex
+                                }
+                            }
+                        )
+                    }
+            }
+        }
+        .padding(2)
+        .background(
+            Capsule()
+                .fill(FlatPalette.trackBackground(dark: dark))
+                .overlay(
+                    Capsule()
+                        .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
+                )
+        )
+    }
+
     private func workspaceLaunchRow(
         workspace: LaunchWorkspaceItem,
         selectedFamily: AgentFamily,
         dark: Bool
     ) -> some View {
-        let isSelected = selectedWorkspacePath == workspace.id
-        let isCardHovered = hoveredWorkspacePath == workspace.id || isSelected
+        let en = model.language == .english
+        let isSelected = isKeyboardNavigationActive && selectedWorkspacePath == workspace.id
+        let hoveredFamilyOnThisRow: AgentFamily? = AgentFamily.allCases.first {
+            hoveredWorkspaceAgentKey == "\(workspace.id):\($0.rawValue)"
+        }
+        let isRowHovered = hoveredWorkspacePath == workspace.id || hoveredFamilyOnThisRow != nil
+        let isRowHighlighted = isRowHovered || isSelected
         let displayPath = abbreviateHomePath(workspace.path)
-        let activeAccent = selectedFamily.accentColor(dark: dark)
-        let sshCyan = dark
-            ? Color(red: 0.32, green: 0.78, blue: 0.98)
-            : Color(red: 0.05, green: 0.50, blue: 0.82)
+        let hostName = model.resolvedLaunchTerminalHost().displayName
+        let rowShape = RoundedRectangle(cornerRadius: 10, style: .continuous)
 
-        return VStack(alignment: .leading, spacing: 8.5) {
-            // Top Row: Directory or SSH Remote Machine + Path
-            HStack(alignment: .center, spacing: 8) {
-                if let sshHost = workspace.sshTarget, !sshHost.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "network")
-                            .font(.system(size: 9.5, weight: .bold))
-                        Text("SSH · \(sshHost)")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(sshCyan)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2.5)
+        let rowTooltip: String = {
+            if let sshHost = workspace.sshTarget, !sshHost.isEmpty {
+                return en
+                    ? "Connect to \(sshHost) (\(displayPath)) & launch \(selectedFamily.badgeTitle) in \(hostName)"
+                    : "在 \(hostName) 中 SSH 连接 \(sshHost)（\(displayPath)）并启动 \(selectedFamily.badgeTitle)"
+            }
+            return en
+                ? "Launch \(selectedFamily.badgeTitle) in \(hostName) (\(displayPath))"
+                : "在 \(hostName) 中启动 \(selectedFamily.badgeTitle)（\(displayPath)）"
+        }()
+
+        let rowBorderColor: Color = {
+            if let hoveredFamily = hoveredFamilyOnThisRow {
+                return hoveredFamily.accentColor(dark: dark).opacity(dark ? 0.72 : 0.62)
+            }
+            if isRowHighlighted {
+                return selectedFamily.accentColor(dark: dark).opacity(dark ? 0.56 : 0.48)
+            }
+            return FlatPalette.hairlineBorder(dark: dark)
+        }()
+
+        return HStack(alignment: .center, spacing: 8) {
+            if let sshHost = workspace.sshTarget, !sshHost.isEmpty {
+                Text("SSH · \(sshHost)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(FlatPalette.accentText(dark: dark))
+                    .padding(.horizontal, 5.5)
+                    .padding(.vertical, 2)
                     .background(
-                        Capsule()
-                            .fill(sshCyan.opacity(dark ? 0.16 : 0.11))
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(sshCyan.opacity(dark ? 0.35 : 0.25), lineWidth: 1)
-                            )
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(FlatPalette.accentSoftBackground(dark: dark))
                     )
                     .fixedSize(horizontal: true, vertical: false)
 
-                    HStack(spacing: 3.5) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 9.5, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                        Text(displayPath)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                } else {
-                    HStack(spacing: 5) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(isCardHovered ? activeAccent : .secondary)
-                        Text(displayPath)
-                            .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
+                Text(displayPath)
+                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Image(systemName: "folder")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(FlatPalette.iconPrimary(dark: dark))
 
-                Spacer(minLength: 4)
+                Text(displayPath)
+                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
 
-            // Bottom Row: 4 Agent Launch Buttons (Codex, Claude, Copilot, Antigravity)
-            HStack(spacing: 6) {
+            Spacer(minLength: 4)
+
+            // Reserve space for the trailing 4-icon dock overlay (4 * 26 + 3 * 4 = 116)
+            Color.clear
+                .frame(width: 116, height: 24)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .contentShape(rowShape)
+        .overlay {
+            PointingHandCursorOverlay(
+                tooltip: rowTooltip,
+                onHoverChange: { hovering in
+                    if hovering {
+                        isKeyboardNavigationActive = false
+                    }
+                    hoveredWorkspacePath = hovering ? workspace.id : (hoveredWorkspacePath == workspace.id ? nil : hoveredWorkspacePath)
+                },
+                onClick: {
+                    selectedWorkspacePath = workspace.id
+                    resetHoverAndKeyboardNavigation()
+                    showingQuickLaunch = false
+                    model.launchWorkspaceSession(family: model.preferredLaunchFamily, workspace: workspace)
+                }
+            )
+        }
+        .overlay(alignment: .trailing) {
+            HStack(spacing: 4) {
                 ForEach(AgentFamily.allCases) { family in
                     workspaceAgentLaunchButton(
                         workspace: workspace,
                         family: family,
+                        isRowHighlighted: isRowHighlighted,
                         isKeyboardActive: isSelected && selectedFamily == family,
                         dark: dark
                     )
                 }
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .onHover { hovering in
-            hoveredWorkspacePath = hovering ? workspace.id : (hoveredWorkspacePath == workspace.id ? nil : hoveredWorkspacePath)
-            if hovering {
-                selectedWorkspacePath = workspace.id
-            }
+            .padding(.trailing, 11)
         }
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(FlatPalette.elevatedRowBackground(dark: dark, hovered: isCardHovered))
+            rowShape
+                .fill(FlatPalette.elevatedRowBackground(dark: dark, hovered: isRowHighlighted))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    rowShape
                         .strokeBorder(
-                            isCardHovered
-                                ? (workspace.isSSH ? sshCyan : activeAccent).opacity(isSelected ? (dark ? 0.55 : 0.44) : (dark ? 0.36 : 0.26))
-                                : FlatPalette.hairlineBorder(dark: dark),
-                            lineWidth: isSelected ? 1.25 : 1.0
+                            rowBorderColor,
+                            lineWidth: isRowHighlighted ? 1.25 : 1.0
                         )
                 )
         )
-        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.15), value: isCardHovered)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isRowHighlighted)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: hoveredFamilyOnThisRow)
         .id(workspace.id)
     }
 
     private func workspaceAgentLaunchButton(
         workspace: LaunchWorkspaceItem,
         family: AgentFamily,
+        isRowHighlighted: Bool,
         isKeyboardActive: Bool,
         dark: Bool
     ) -> some View {
@@ -2724,67 +3019,63 @@ struct AgentMeterPanel: View {
         let isHighlighted = isHovered || isKeyboardActive
         let accent = family.accentColor(dark: dark)
         let displayPath = abbreviateHomePath(workspace.path)
+        let hostName = model.resolvedLaunchTerminalHost().displayName
+        let btnShape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         let tooltipText: String = {
             if let sshHost = workspace.sshTarget, !sshHost.isEmpty {
                 return en
-                    ? "Connect to \(sshHost) (\(displayPath)) & launch \(family.badgeTitle)"
-                    : "SSH 连接 \(sshHost)（\(displayPath)）并启动 \(family.badgeTitle)"
+                    ? "Connect to \(sshHost) (\(displayPath)) & launch \(family.badgeTitle) in \(hostName)"
+                    : "在 \(hostName) 中 SSH 连接 \(sshHost)（\(displayPath)）并启动 \(family.badgeTitle)"
             }
             return en
-                ? "Launch \(family.badgeTitle) in \(displayPath)"
-                : "在 \(displayPath) 启动 \(family.badgeTitle)"
+                ? "Launch \(family.badgeTitle) in \(hostName) (\(displayPath))"
+                : "在 \(hostName) 中启动 \(family.badgeTitle)（\(displayPath)）"
         }()
 
-        return HStack(spacing: 4.5) {
-            AgentFamilyGlyph(
-                family: family,
-                color: isHighlighted ? accent : FlatPalette.inkSecondary(dark: dark),
-                size: 11.5
-            )
-            Text(family.shortName)
-                .font(.system(size: 10.5, weight: isHighlighted ? .semibold : .medium))
-                .lineLimit(1)
-        }
-        .foregroundStyle(isHighlighted ? accent : .secondary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 5.5)
+        return AgentFamilyGlyph(
+            family: family,
+            color: accent,
+            size: 13.5
+        )
+        .opacity(isHighlighted ? 1.0 : (isRowHighlighted ? 0.92 : 0.75))
+        .frame(width: 26, height: 26)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            btnShape
                 .fill(
                     isHighlighted
                         ? family.tintFill(dark: dark, highlighted: true)
-                        : (dark ? Color.white.opacity(0.045) : Color.black.opacity(0.035))
+                        : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    btnShape
                         .strokeBorder(
                             isHighlighted
-                                ? accent.opacity(dark ? 0.48 : 0.36)
+                                ? accent.opacity(dark ? 0.68 : 0.56)
                                 : FlatPalette.hairlineBorder(dark: dark),
-                            lineWidth: 1
+                            lineWidth: isHighlighted ? 1.2 : 1.0
                         )
                 )
         )
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(btnShape)
         .overlay {
             PointingHandCursorOverlay(
                 tooltip: tooltipText,
                 onHoverChange: { hovering in
-                    hoveredWorkspaceAgentKey = hovering ? buttonKey : (hoveredWorkspaceAgentKey == buttonKey ? nil : hoveredWorkspaceAgentKey)
                     if hovering {
-                        hoveredWorkspacePath = workspace.id
-                        selectedWorkspacePath = workspace.id
-                        model.preferredLaunchFamily = family
+                        isKeyboardNavigationActive = false
                     }
+                    hoveredWorkspaceAgentKey = hovering ? buttonKey : (hoveredWorkspaceAgentKey == buttonKey ? nil : hoveredWorkspaceAgentKey)
                 },
                 onClick: {
                     selectedWorkspacePath = workspace.id
+                    resetHoverAndKeyboardNavigation()
                     showingQuickLaunch = false
                     model.launchWorkspaceSession(family: family, workspace: workspace)
                 }
             )
         }
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isHighlighted)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isRowHighlighted)
     }
 
     private func abbreviateHomePath(_ path: String) -> String {
@@ -2806,10 +3097,11 @@ struct AgentMeterPanel: View {
 
     private func pickCustomDirectoryAndLaunch(family: AgentFamily) {
         let en = model.language == .english
+        let hostName = model.resolvedLaunchTerminalHost().displayName
         let panel = NSOpenPanel()
         panel.title = en
-            ? "Choose workspace directory to launch \(family.badgeTitle)"
-            : "选择要启动 \(family.badgeTitle) 的工作目录"
+            ? "Choose workspace directory to launch \(family.badgeTitle) in \(hostName)"
+            : "选择要在 \(hostName) 中启动 \(family.badgeTitle) 的工作目录"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
@@ -2827,27 +3119,31 @@ private struct AgentFamilyBadgeIcon: View {
     let family: AgentFamily
     let dark: Bool
     var highlighted: Bool = false
-    var size: CGFloat = 32
+    var size: CGFloat = 28
     var muted: Bool = false
 
     var body: some View {
-        let accent = family.accentColor(dark: dark)
-        let fg: Color = muted ? .secondary : accent
-        let corner = round(size * 0.28)
-        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        let fg: Color = muted ? FlatPalette.inkTertiary(dark: dark) : family.accentColor(dark: dark)
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
 
         ZStack {
             shape
-                .fill(family.tintFill(dark: dark, highlighted: highlighted))
+                .fill(
+                    highlighted && !muted
+                        ? family.tintFill(dark: dark, highlighted: true)
+                        : (dark ? Color.white.opacity(0.05) : Color.black.opacity(0.04))
+                )
                 .overlay(
                     shape
                         .strokeBorder(
-                            accent.opacity(highlighted ? (dark ? 0.42 : 0.30) : (dark ? 0.22 : 0.16)),
+                            highlighted && !muted
+                                ? fg.opacity(dark ? 0.42 : 0.34)
+                                : FlatPalette.hairlineBorder(dark: dark),
                             lineWidth: 1
                         )
                 )
 
-            AgentFamilyGlyph(family: family, color: fg, size: size * 0.52)
+            AgentFamilyGlyph(family: family, color: fg, size: size * 0.50)
         }
         .frame(width: size, height: size)
     }
@@ -2931,43 +3227,24 @@ private struct AgentMeterBrandEmblem: View {
     let dark: Bool
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.15, green: 0.16, blue: 0.19),
-                            Color(red: 0.07, green: 0.08, blue: 0.10),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+            shape
+                .fill(FlatPalette.trackBackground(dark: dark))
+                .overlay(
+                    shape
+                        .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(dark ? 0.26 : 0.10), radius: 5, x: 0, y: 2)
 
-            HStack(spacing: 3.5) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(Color(white: 0.95))
-
-                VStack(alignment: .leading, spacing: 2.6) {
-                    Capsule()
-                        .fill(Color(red: 0.18, green: 0.88, blue: 0.64))
-                        .frame(width: 9.5, height: 2.4)
-                    HStack(spacing: 2) {
-                        Capsule()
-                            .fill(Color(red: 0.32, green: 0.64, blue: 0.99))
-                            .frame(width: 6.5, height: 2.4)
-                        Circle()
-                            .fill(Color(red: 1.0, green: 0.22, blue: 0.44))
-                            .frame(width: 2.6, height: 2.6)
-                    }
-                    Capsule()
-                        .fill(Color.white.opacity(0.32))
-                        .frame(width: 4.5, height: 2.4)
-                }
+            HStack(spacing: 0.5) {
+                Text(">")
+                    .foregroundStyle(FlatPalette.accent(dark: dark))
+                Text("_")
+                    .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
             }
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
         }
+        .frame(width: 26, height: 26)
     }
 }
 
@@ -2977,6 +3254,7 @@ private struct AgentMeterSettings: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var appearanceNamespace
     @Namespace private var languageNamespace
+    @Namespace private var terminalHostNamespace
 
     var body: some View {
         let en = model.language == .english
@@ -3083,6 +3361,19 @@ private struct AgentMeterSettings: View {
             .padding(16)
             .modifier(FlatCardSurface())
 
+            let resolvedHostName = model.resolvedLaunchTerminalHost().displayName
+            VStack(alignment: .leading, spacing: 8) {
+                Text(en ? "Terminal Host" : "首选终端").font(.callout.weight(.medium))
+                terminalHostPicker
+                Text(en
+                    ? "Preferred terminal for launching or resuming sessions (currently active: \(resolvedHostName))."
+                    : "选择新建或恢复会话时使用的目标终端（当前生效：\(resolvedHostName)）。"
+                )
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(16)
+            .modifier(FlatCardSurface())
+
             VStack(alignment: .leading, spacing: 8) {
                 Text(en ? "Appearance" : "外观").font(.callout.weight(.medium))
                 appearancePicker
@@ -3101,8 +3392,8 @@ private struct AgentMeterSettings: View {
                         Text(en ? "Agent Launch Commands" : "Agent 启动命令")
                             .font(.callout.weight(.medium))
                         Text(en
-                            ? "Command executed automatically when opening a new Rex tab."
-                            : "新建会话时在 Rex 终端自动执行的命令行。"
+                            ? "Command executed automatically when opening a new \(resolvedHostName) terminal tab."
+                            : "新建会话时在 \(resolvedHostName) 终端标签页中自动执行的命令行。"
                         )
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -3249,6 +3540,61 @@ private struct AgentMeterSettings: View {
             .accessibilityValue(selected ? (model.language == .english ? "Selected" : "已选择") : (model.language == .english ? "Not selected" : "未选择"))
     }
 
+    private var terminalHostPicker: some View {
+        HStack(spacing: 4) {
+            ForEach(PreferredTerminalHost.allCases) { host in
+                terminalHostOptionItem(host: host)
+            }
+        }
+        .padding(4)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(FlatPalette.trackBackground(dark: colorScheme == .dark))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(FlatPalette.hairlineBorder(dark: colorScheme == .dark), lineWidth: 1)
+                }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(model.language == .english ? "Terminal Host" : "首选终端")
+    }
+
+    private func terminalHostOptionItem(host: PreferredTerminalHost) -> some View {
+        let dark = colorScheme == .dark
+        let selected = model.preferredTerminalHost == host
+        return Text(host.title(language: model.language))
+            .font(.system(size: 12, weight: selected ? .semibold : .medium))
+            .foregroundStyle(selected ? Color.primary : Color.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(FlatPalette.selectedPillBackground(dark: dark))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .strokeBorder(
+                                    dark ? Color.white.opacity(0.14) : Color.black.opacity(0.08),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: .black.opacity(dark ? 0.26 : 0.07), radius: 2, x: 0, y: 1)
+                        .matchedGeometryEffect(id: "terminalHostIndicator", in: terminalHostNamespace)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay {
+                PointingHandCursorOverlay(
+                    onClick: {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.22)) {
+                            model.preferredTerminalHost = host
+                        }
+                    }
+                )
+            }
+            .accessibilityValue(selected ? (model.language == .english ? "Selected" : "已选择") : (model.language == .english ? "Not selected" : "未选择"))
+    }
+
     private var appearancePicker: some View {
         HStack(spacing: 4) {
             ForEach(AppearanceMode.allCases) { mode in
@@ -3308,19 +3654,21 @@ private struct AgentMeterSettings: View {
 private struct AgentPulseDot: View {
     let status: AgentTaskStatus
     var size: CGFloat = 6
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulsing = false
 
     private var dotColor: Color {
+        let dark = colorScheme == .dark
         switch status {
         case .needsInput:
-            return Color(red: 0.98, green: 0.68, blue: 0.20)
+            return FlatPalette.amberAlertForeground(dark: dark)
         case .working:
-            return FlatPalette.blue
+            return FlatPalette.accentText(dark: dark)
         case .completed:
-            return Color(red: 0.22, green: 0.78, blue: 0.50)
+            return FlatPalette.softGoodForeground(dark: dark)
         case .idle:
-            return .secondary.opacity(0.55)
+            return FlatPalette.inkTertiary(dark: dark)
         }
     }
 
@@ -3357,23 +3705,25 @@ private struct AgentPulseDot: View {
 }
 
 private struct UnreadCompletionBeacon: View {
+    let dark: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var glowing = false
 
-    // Distinct bright coral-red/magenta color to contrast with Emerald (Codex), Blue (Copilot), Amber (Antigravity), and Green (Completed badge)
-    private let dotColor = Color(red: 1.0, green: 0.22, blue: 0.44)
+    private var dotColor: Color {
+        FlatPalette.dangerInterruptForeground(dark: dark)
+    }
 
     var body: some View {
         ZStack {
             if !reduceMotion {
                 Circle()
-                    .fill(dotColor.opacity(glowing ? 0.42 : 0.16))
-                    .frame(width: glowing ? 14 : 8, height: glowing ? 14 : 8)
+                    .fill(dotColor.opacity(glowing ? 0.36 : 0.14))
+                    .frame(width: glowing ? 13 : 8, height: glowing ? 13 : 8)
             }
             Circle()
                 .fill(dotColor)
-                .frame(width: 7.5, height: 7.5)
-                .shadow(color: dotColor.opacity(0.9), radius: 4, x: 0, y: 0)
+                .frame(width: 7, height: 7)
+                .shadow(color: dotColor.opacity(0.6), radius: 3, x: 0, y: 0)
         }
         .onAppear {
             guard !reduceMotion else { return }

@@ -23,6 +23,11 @@ final class AgentMeterModel {
             UserDefaults.standard.set(preferredLaunchFamily.rawValue, forKey: "preferredLaunchFamily")
         }
     }
+    var preferredTerminalHost: PreferredTerminalHost {
+        didSet {
+            UserDefaults.standard.set(preferredTerminalHost.rawValue, forKey: "preferredTerminalHost")
+        }
+    }
     var hasUnseenMenuBarCompletion = false
     var isSleeping = false
     var isPanelOpen = false
@@ -71,6 +76,7 @@ final class AgentMeterModel {
         appearanceMode = AppearanceMode(rawValue: defaults.string(forKey: "appearanceMode") ?? "") ?? .automatic
         language = AppLanguage(rawValue: defaults.string(forKey: "appLanguage") ?? "") ?? .english
         preferredLaunchFamily = AgentFamily(rawValue: defaults.string(forKey: "preferredLaunchFamily") ?? "") ?? .claude
+        preferredTerminalHost = PreferredTerminalHost(rawValue: defaults.string(forKey: "preferredTerminalHost") ?? "") ?? .auto
         if let savedCmds = defaults.dictionary(forKey: "customLaunchCommands") as? [String: String] {
             customLaunchCommands = savedCmds
         }
@@ -385,6 +391,76 @@ final class AgentMeterModel {
         }
     }
 
+    func resolvedLaunchTerminalHost() -> TerminalHostKind {
+        switch preferredTerminalHost {
+        case .rex:
+            return .rex
+        case .ghostty:
+            return .ghostty
+        case .auto:
+            // 1. Focused session in host
+            if let focusedItem = agentActivities.first(where: \.isFocusedInHost) {
+                return focusedItem.terminalHost
+            }
+
+            // 2 & 3. Frontmost application check
+            if let frontmost = NSWorkspace.shared.frontmostApplication {
+                let bundleID = frontmost.bundleIdentifier?.lowercased() ?? ""
+                let name = frontmost.localizedName?.lowercased() ?? ""
+                if bundleID == "com.mitchellh.ghostty" || name == "ghostty" {
+                    return .ghostty
+                }
+                if bundleID.contains("com.superlogical.rex") || name == "rex beta" || name == "rex" {
+                    return .rex
+                }
+            }
+
+            // 4. Online sessions in agentActivities
+            let hasGhosttySession = agentActivities.contains { $0.terminalHost == .ghostty }
+            let hasRexSession = agentActivities.contains { $0.terminalHost == .rex }
+            if hasGhosttySession && !hasRexSession {
+                return .ghostty
+            }
+            if hasGhosttySession,
+               let mostRecent = agentActivities.max(by: { $0.updatedAt < $1.updatedAt }),
+               mostRecent.terminalHost == .ghostty {
+                return .ghostty
+            }
+            if hasRexSession && !hasGhosttySession {
+                return .rex
+            }
+
+            // 5 & 6. Running applications check
+            let runningApps = NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }
+            let isGhosttyRunning = runningApps.contains { app in
+                app.bundleIdentifier?.lowercased() == "com.mitchellh.ghostty" ||
+                app.localizedName?.lowercased() == "ghostty"
+            }
+            let isRexRunning = runningApps.contains { app in
+                app.bundleIdentifier?.lowercased().contains("com.superlogical.rex") == true ||
+                app.localizedName?.lowercased() == "rex beta" ||
+                app.localizedName?.lowercased() == "rex"
+            }
+            if isGhosttyRunning && !isRexRunning {
+                return .ghostty
+            }
+            if isRexRunning && !isGhosttyRunning {
+                return .rex
+            }
+            if isGhosttyRunning && isRexRunning {
+                if let firstHost = agentActivities.first?.terminalHost {
+                    return firstHost
+                }
+                return .ghostty
+            }
+
+            if AgentActivityTracker.isGhosttyAppInstalled() && !AgentActivityTracker.isRexBinaryAvailable() {
+                return .ghostty
+            }
+            return .rex
+        }
+    }
+
     func resumeOrFocusHistoricalSession(_ item: AgentHistorySessionItem) {
         if let onlineID = item.onlineActivityID,
            let liveItem = agentActivities.first(where: { $0.id == onlineID }) {
@@ -393,8 +469,9 @@ final class AgentMeterModel {
         }
         recordRecentWorkspace(LaunchWorkspaceItem(path: item.cwdPath, sshTarget: nil))
         let baseCmd = launchCommand(for: item.family)
+        let host = resolvedLaunchTerminalHost()
         Task { @MainActor in
-            _ = await agentTracker.resumeHistoricalSession(item, baseCommand: baseCmd)
+            _ = await agentTracker.resumeHistoricalSession(item, baseCommand: baseCmd, preferredHost: host)
             try? await Task.sleep(for: .milliseconds(900))
             await pollAgents()
         }
@@ -435,8 +512,14 @@ final class AgentMeterModel {
         preferredLaunchFamily = family
         recordRecentWorkspace(workspace)
         let command = launchCommand(for: family)
+        let host = resolvedLaunchTerminalHost()
         Task { @MainActor in
-            _ = await agentTracker.launchWorkspaceSession(family: family, workspace: workspace, customCommand: command)
+            _ = await agentTracker.launchWorkspaceSession(
+                family: family,
+                workspace: workspace,
+                customCommand: command,
+                preferredHost: host
+            )
             try? await Task.sleep(for: .milliseconds(900))
             await pollAgents()
         }

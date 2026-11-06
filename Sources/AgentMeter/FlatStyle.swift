@@ -1,145 +1,231 @@
 import AppKit
 import SwiftUI
 
-/// Bencho-inspired design system:
-/// - Light mode: warm stone paper (`#F7F7F6`) + crisp white board (`#FFFFFF`) + deep ink (`#17181A`) + warm grey secondary (`#5C5B56`)
-/// - Dark mode: neutral obsidian (`#0F0F0F`) + graphite board (`#1A1A1A`) + deep inlay (`#121212`) + crisp white ink (`#FFFFFF`)
+/// Pure Stageshow Design System (`kit/stage.css` + `examples/dark-hero` + `references/craft.md`):
+/// - Zero blur, zero glass: depth comes from 4 solid surface steps (`--ss-canvas`, `--ss-chrome`, `--ss-surface`, `--ss-raised`) and 1px hairlines.
+/// - Opaque text & icon tokens (`--ss-text-strong`, `--ss-text`, `--ss-text-faint`, `--ss-icon`) so strokes never paint darker at intersections.
+/// - Single focal accent rule: only the active confirmation / warning state lights up semantic color; running & completed states stay quiet.
 enum FlatPalette {
     static let blue = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 58.0 / 255, green: 169.0 / 255, blue: 255.0 / 255, alpha: 1)
-            : NSColor(srgbRed: 13.0 / 255, green: 153.0 / 255, blue: 255.0 / 255, alpha: 1)
+            ? NSColor(srgbRed: 147.0 / 255, green: 197.0 / 255, blue: 253.0 / 255, alpha: 1)
+            : NSColor(srgbRed: 37.0 / 255, green: 99.0 / 255, blue: 235.0 / 255, alpha: 1)
     })
 
-    // --surface: #0F0F0F (dark) / #F7F7F6 (light warm stone)
+    // --ss-canvas: #111113 (dark) / #F9F9FB (light Radix Slate 2)
     static func panelBackground(dark: Bool) -> Color {
         dark
-            ? Color(red: 15.0 / 255, green: 15.0 / 255, blue: 15.0 / 255)
-            : Color(red: 247.0 / 255, green: 247.0 / 255, blue: 246.0 / 255)
+            ? Color(red: 17.0 / 255, green: 17.0 / 255, blue: 19.0 / 255)
+            : Color(red: 249.0 / 255, green: 249.0 / 255, blue: 251.0 / 255)
     }
 
-    // --board: #1A1A1A (dark) / #FFFFFF (light)
+    // --ss-chrome: #1D1D20 (dark) / #FFFFFF (light)
+    static func chromeBackground(dark: Bool) -> Color {
+        dark
+            ? Color(red: 29.0 / 255, green: 29.0 / 255, blue: 32.0 / 255)
+            : Color.white
+    }
+
+    // --ss-surface: #1A1A1D (dark) / #FFFFFF (light)
     static func cardBackground(dark: Bool) -> Color {
         dark
-            ? Color(red: 26.0 / 255, green: 26.0 / 255, blue: 26.0 / 255)
+            ? Color(red: 26.0 / 255, green: 26.0 / 255, blue: 29.0 / 255)
             : Color.white
     }
 
     static func elevatedRowBackground(dark: Bool, hovered: Bool = false) -> Color {
         if dark {
             return hovered
-                ? Color(red: 33.0 / 255, green: 33.0 / 255, blue: 33.0 / 255)
-                : Color(red: 26.0 / 255, green: 26.0 / 255, blue: 26.0 / 255)
+                ? Color(red: 33.0 / 255, green: 33.0 / 255, blue: 37.0 / 255)
+                : Color(red: 26.0 / 255, green: 26.0 / 255, blue: 29.0 / 255)
         } else {
             return hovered
-                ? Color(red: 252.0 / 255, green: 252.0 / 255, blue: 251.0 / 255)
+                ? Color(red: 249.0 / 255, green: 249.0 / 255, blue: 251.0 / 255)
                 : Color.white
         }
     }
 
-    // --surface-2 / --surface-3 recessed tracks & wells
-    static func trackBackground(dark: Bool) -> Color {
-        dark
-            ? Color(red: 22.0 / 255, green: 22.0 / 255, blue: 22.0 / 255)
-            : Color(red: 233.0 / 255, green: 231.0 / 255, blue: 226.0 / 255)
+    // --ss-raised: #26262A (dark) -> #313134 (hovered) / #FFFFFF (light) -> #E8E8EC (hovered)
+    static func raisedBackground(dark: Bool, hovered: Bool = false) -> Color {
+        if dark {
+            return hovered
+                ? Color(red: 49.0 / 255, green: 49.0 / 255, blue: 52.0 / 255)
+                : Color(red: 38.0 / 255, green: 38.0 / 255, blue: 42.0 / 255)
+        } else {
+            return hovered
+                ? Color(red: 232.0 / 255, green: 232.0 / 255, blue: 236.0 / 255)
+                : Color.white
+        }
     }
 
-    // --pill-thumb: crisp white in light mode, elevated graphite in dark mode
+    // --ss-ink-2: rgba(255, 255, 255, 0.07) (dark) / #E8E8EC (light Radix Slate 4)
+    static func trackBackground(dark: Bool) -> Color {
+        dark
+            ? Color.white.opacity(0.07)
+            : Color(red: 232.0 / 255, green: 232.0 / 255, blue: 236.0 / 255)
+    }
+
+    // --ss-raised: #26262A (dark) / #FFFFFF (light)
     static func selectedPillBackground(dark: Bool) -> Color {
         dark
-            ? Color(red: 46.0 / 255, green: 46.0 / 255, blue: 46.0 / 255)
+            ? Color(red: 38.0 / 255, green: 38.0 / 255, blue: 42.0 / 255)
             : Color.white
     }
 
+    // --ss-term-bg: #141417 (dark) / #F0F0F3 (light Radix Slate 3)
     static func terminalWellBackground(dark: Bool) -> Color {
         dark
-            ? Color(red: 16.0 / 255, green: 16.0 / 255, blue: 16.0 / 255)
-            : Color(red: 246.0 / 255, green: 245.0 / 255, blue: 242.0 / 255)
+            ? Color(red: 20.0 / 255, green: 20.0 / 255, blue: 23.0 / 255)
+            : Color(red: 240.0 / 255, green: 240.0 / 255, blue: 243.0 / 255)
     }
 
     static func controlBackground(dark: Bool, highlighted: Bool) -> Color {
-        if dark {
-            return highlighted
-                ? Color(red: 42.0 / 255, green: 42.0 / 255, blue: 42.0 / 255)
-                : Color(red: 26.0 / 255, green: 26.0 / 255, blue: 26.0 / 255)
-        } else {
-            return highlighted
-                ? Color(red: 236.0 / 255, green: 235.0 / 255, blue: 231.0 / 255)
-                : Color.white
-        }
+        raisedBackground(dark: dark, hovered: highlighted)
     }
 
-    // --ink: #FFFFFF (dark) / #17181A (light)
+    // --ss-text-strong: #ECECEE (dark) / #1C2024 (light Radix Slate 12)
     static func inkPrimary(dark: Bool) -> Color {
         dark
-            ? Color.white
-            : Color(red: 23.0 / 255, green: 24.0 / 255, blue: 26.0 / 255)
+            ? Color(red: 236.0 / 255, green: 236.0 / 255, blue: 238.0 / 255)
+            : Color(red: 28.0 / 255, green: 32.0 / 255, blue: 36.0 / 255)
     }
 
-    // --ink-3: #9A9A9A (dark) / #5C5B56 (light warm charcoal)
+    // --ss-text: #9D9DA1 (dark) / #60646C (light Radix Slate 11)
     static func inkSecondary(dark: Bool) -> Color {
         dark
-            ? Color(red: 154.0 / 255, green: 154.0 / 255, blue: 154.0 / 255)
-            : Color(red: 92.0 / 255, green: 91.0 / 255, blue: 86.0 / 255)
+            ? Color(red: 157.0 / 255, green: 157.0 / 255, blue: 161.0 / 255)
+            : Color(red: 96.0 / 255, green: 100.0 / 255, blue: 108.0 / 255)
     }
 
-    // --ink-5: #6B6B6B (dark) / #85847E (light muted stone)
+    // --ss-text-faint: #6C6C70 (dark) / #8B8D98 (light Radix Slate 9)
     static func inkTertiary(dark: Bool) -> Color {
         dark
-            ? Color(red: 107.0 / 255, green: 107.0 / 255, blue: 107.0 / 255)
-            : Color(red: 133.0 / 255, green: 132.0 / 255, blue: 126.0 / 255)
+            ? Color(red: 108.0 / 255, green: 108.0 / 255, blue: 112.0 / 255)
+            : Color(red: 139.0 / 255, green: 141.0 / 255, blue: 152.0 / 255)
     }
 
+    // --ss-icon: #9A9AA0 (dark) / #60646C (light Radix Slate 11)
+    static func iconPrimary(dark: Bool) -> Color {
+        dark
+            ? Color(red: 154.0 / 255, green: 154.0 / 255, blue: 160.0 / 255)
+            : Color(red: 96.0 / 255, green: 100.0 / 255, blue: 108.0 / 255)
+    }
+
+    // --ss-line: rgba(255, 255, 255, 0.08) (dark) / #E8E8EC (light Radix Slate 4)
     static func hairlineBorder(dark: Bool) -> Color {
-        dark ? Color.white.opacity(0.08) : Color(red: 23.0 / 255, green: 24.0 / 255, blue: 26.0 / 255).opacity(0.075)
+        dark
+            ? Color.white.opacity(0.08)
+            : Color(red: 232.0 / 255, green: 232.0 / 255, blue: 236.0 / 255)
     }
 
+    // --ss-line-faint: rgba(255, 255, 255, 0.05) (dark) / #F0F0F3 (light Radix Slate 3)
+    static func faintBorder(dark: Bool) -> Color {
+        dark
+            ? Color.white.opacity(0.05)
+            : Color(red: 240.0 / 255, green: 240.0 / 255, blue: 243.0 / 255)
+    }
+
+    // --ss-accent: #3B82F6 (dark) / #3E63DD (light Radix Indigo 9)
+    static func accent(dark: Bool) -> Color {
+        dark
+            ? Color(red: 59.0 / 255, green: 130.0 / 255, blue: 246.0 / 255)
+            : Color(red: 62.0 / 255, green: 99.0 / 255, blue: 221.0 / 255)
+    }
+
+    // --ss-accent-text: #93C5FD (dark) / #3358D4 (light Radix Indigo)
+    static func accentText(dark: Bool) -> Color {
+        dark
+            ? Color(red: 147.0 / 255, green: 197.0 / 255, blue: 253.0 / 255)
+            : Color(red: 51.0 / 255, green: 88.0 / 255, blue: 212.0 / 255)
+    }
+
+    // --ss-accent-soft: rgba(59, 130, 246, 0.20) (dark) / #E1E9FF (light Radix Indigo 3)
+    static func accentSoftBackground(dark: Bool) -> Color {
+        dark
+            ? Color(red: 59.0 / 255, green: 130.0 / 255, blue: 246.0 / 255).opacity(0.20)
+            : Color(red: 225.0 / 255, green: 233.0 / 255, blue: 255.0 / 255)
+    }
+
+    // --ss-term-path: #6F8CCF (dark) / #4B6CB7 (light)
+    static func terminalPath(dark: Bool) -> Color {
+        dark
+            ? Color(red: 111.0 / 255, green: 140.0 / 255, blue: 207.0 / 255)
+            : Color(red: 75.0 / 255, green: 108.0 / 255, blue: 183.0 / 255)
+    }
+
+    // --ss-term-sigil: #6EE7A8 (dark) / #15803D (light)
+    static func terminalSigil(dark: Bool) -> Color {
+        dark
+            ? Color(red: 110.0 / 255, green: 231.0 / 255, blue: 168.0 / 255)
+            : Color(red: 21.0 / 255, green: 128.0 / 255, blue: 61.0 / 255)
+    }
+
+    // --ss-warning-text: #FBBF24 (dark) / #B45309 (light)
     static func conflictWarningForeground(dark: Bool) -> Color {
         dark
-            ? Color(red: 0.98, green: 0.68, blue: 0.22)
-            : Color(red: 0.80, green: 0.38, blue: 0.04)
+            ? Color(red: 251.0 / 255, green: 191.0 / 255, blue: 36.0 / 255)
+            : Color(red: 180.0 / 255, green: 83.0 / 255, blue: 9.0 / 255)
     }
 
+    // --ss-warning-soft: rgba(245, 158, 11, 0.18) (dark) / rgba(245, 158, 11, 0.14) (light)
     static func conflictWarningBackground(dark: Bool) -> Color {
         dark
-            ? Color(red: 0.32, green: 0.20, blue: 0.08)
-            : Color(red: 1.0, green: 0.93, blue: 0.82)
+            ? Color(red: 245.0 / 255, green: 158.0 / 255, blue: 11.0 / 255).opacity(0.18)
+            : Color(red: 245.0 / 255, green: 158.0 / 255, blue: 11.0 / 255).opacity(0.14)
     }
 
     static func amberAlertForeground(dark: Bool) -> Color {
-        dark
-            ? Color(red: 0.98, green: 0.70, blue: 0.24)
-            : Color(red: 0.82, green: 0.44, blue: 0.06)
+        conflictWarningForeground(dark: dark)
     }
 
     static func amberAlertBackground(dark: Bool) -> Color {
-        dark
-            ? Color(red: 0.28, green: 0.18, blue: 0.07)
-            : Color(red: 1.0, green: 0.95, blue: 0.86)
+        conflictWarningBackground(dark: dark)
     }
 
+    // --ss-danger-text: #F87171 (dark) / #B91C1C (light)
     static func dangerInterruptForeground(dark: Bool) -> Color {
         dark
-            ? Color(red: 0.98, green: 0.44, blue: 0.48)
-            : Color(red: 0.82, green: 0.18, blue: 0.24)
+            ? Color(red: 248.0 / 255, green: 113.0 / 255, blue: 113.0 / 255)
+            : Color(red: 185.0 / 255, green: 28.0 / 255, blue: 28.0 / 255)
     }
 
+    // --ss-danger-soft: rgba(239, 68, 68, 0.16..0.24) (dark) / rgba(239, 68, 68, 0.10..0.16) (light)
     static func dangerInterruptBackground(dark: Bool, hovered: Bool) -> Color {
         if dark {
-            return hovered
-                ? Color(red: 0.42, green: 0.14, blue: 0.18)
-                : Color(red: 0.28, green: 0.11, blue: 0.14)
+            return Color(red: 239.0 / 255, green: 68.0 / 255, blue: 68.0 / 255).opacity(hovered ? 0.24 : 0.16)
         } else {
-            return hovered
-                ? Color(red: 1.0, green: 0.84, blue: 0.86)
-                : Color(red: 1.0, green: 0.91, blue: 0.92)
+            return Color(red: 239.0 / 255, green: 68.0 / 255, blue: 68.0 / 255).opacity(hovered ? 0.16 : 0.10)
         }
+    }
+
+    // --ss-success-text: #4ADE80 (dark) / #15803D (light)
+    static func softGoodForeground(dark: Bool) -> Color {
+        dark
+            ? Color(red: 74.0 / 255, green: 222.0 / 255, blue: 128.0 / 255)
+            : Color(red: 21.0 / 255, green: 128.0 / 255, blue: 61.0 / 255)
+    }
+
+    // --ss-success-soft: rgba(34, 197, 94, 0.16..0.24) (dark) / rgba(34, 197, 94, 0.12..0.18) (light)
+    static func softGoodBackground(dark: Bool, hovered: Bool = false) -> Color {
+        if dark {
+            return Color(red: 34.0 / 255, green: 197.0 / 255, blue: 94.0 / 255).opacity(hovered ? 0.24 : 0.16)
+        } else {
+            return Color(red: 34.0 / 255, green: 197.0 / 255, blue: 94.0 / 255).opacity(hovered ? 0.18 : 0.12)
+        }
+    }
+
+    static func diffAddForeground(dark: Bool) -> Color {
+        softGoodForeground(dark: dark)
+    }
+
+    static func diffDeleteForeground(dark: Bool) -> Color {
+        dangerInterruptForeground(dark: dark)
     }
 }
 
 enum FlatGeometry {
-    static let panelRadius: CGFloat = 20
-    static let cardRadius: CGFloat = 15
+    static let panelRadius: CGFloat = 12
+    static let cardRadius: CGFloat = 10
 }
 
 enum FlatMotion {
@@ -164,7 +250,7 @@ struct FlatPanelSurface: ViewModifier {
                     .fill(FlatPalette.panelBackground(dark: dark))
                     .overlay {
                         shape.strokeBorder(
-                            dark ? Color.white.opacity(0.11) : Color.black.opacity(0.08),
+                            FlatPalette.hairlineBorder(dark: dark),
                             lineWidth: 1
                         )
                     }
@@ -202,12 +288,10 @@ private struct FlatControlSurface<S: InsettableShape>: ViewModifier {
         content
             .background {
                 shape
-                    .fill(FlatPalette.controlBackground(dark: dark, highlighted: highlighted))
+                    .fill(FlatPalette.raisedBackground(dark: dark, hovered: highlighted))
                     .overlay {
                         shape.strokeBorder(
-                            dark
-                                ? Color.white.opacity(highlighted ? 0.16 : 0.08)
-                                : Color(red: 23.0 / 255, green: 24.0 / 255, blue: 26.0 / 255).opacity(highlighted ? 0.14 : 0.075),
+                            FlatPalette.hairlineBorder(dark: dark),
                             lineWidth: 1
                         )
                     }
@@ -216,27 +300,35 @@ private struct FlatControlSurface<S: InsettableShape>: ViewModifier {
     }
 }
 
-/// A circular icon button backed directly by `PointingHandCursorOverlay` so its pointing-hand cursor
-/// and hover state work 100% reliably inside non-activating `MenuBarExtra` panels.
+/// A Stageshow rounded-square icon button (`.ss-icon-btn`, 6pt radius) backed directly by `PointingHandCursorOverlay`.
 struct FlatIconButton: View {
     let icon: String
-    var size: CGFloat = 32
-    var iconSize: CGFloat = 13
+    var size: CGFloat = 26
+    var iconSize: CGFloat = 12.5
     var rotatesOnHover: Bool = false
     var tooltip: String? = nil
     let action: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
 
     var body: some View {
+        let dark = colorScheme == .dark
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         Image(systemName: icon)
             .font(.system(size: iconSize, weight: .semibold))
-            .foregroundStyle(.primary.opacity(hovered ? 1.0 : 0.86))
+            .foregroundStyle(hovered ? FlatPalette.inkPrimary(dark: dark) : FlatPalette.iconPrimary(dark: dark))
             .rotationEffect(.degrees(rotatesOnHover && hovered && !reduceMotion ? 20 : 0))
             .frame(width: size, height: size)
-            .modifier(FlatControlSurface(shape: Circle(), highlighted: hovered))
-            .contentShape(Circle())
+            .background(
+                shape.fill(
+                    dark
+                        ? Color.white.opacity(hovered ? 0.10 : 0.07)
+                        : Color.black.opacity(hovered ? 0.08 : 0.06)
+                )
+            )
+            .contentShape(shape)
             .overlay {
                 PointingHandCursorOverlay(
                     tooltip: tooltip,
@@ -251,23 +343,26 @@ struct FlatIconButton: View {
     }
 }
 
-/// A capsule text button backed directly by `PointingHandCursorOverlay`.
+/// A Stageshow rounded-rect text button (`.ss-btn`, 6pt radius) backed directly by `PointingHandCursorOverlay`.
 struct FlatCapsuleButton: View {
     let title: String
     var compact: Bool = true
     let action: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hovered = false
 
     var body: some View {
+        let dark = colorScheme == .dark
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
         Text(title)
-            .font(.system(size: compact ? 12 : 13.5, weight: .semibold))
-            .foregroundStyle(.primary)
-            .padding(.horizontal, compact ? 14 : 20)
-            .padding(.vertical, compact ? 7 : 11)
-            .modifier(FlatControlSurface(shape: Capsule(), highlighted: hovered))
-            .contentShape(Capsule())
+            .font(.system(size: compact ? 11.5 : 13, weight: .medium))
+            .foregroundStyle(FlatPalette.inkPrimary(dark: dark))
+            .padding(.horizontal, compact ? 10 : 16)
+            .padding(.vertical, compact ? 4.5 : 8)
+            .modifier(FlatControlSurface(shape: shape, highlighted: hovered))
+            .contentShape(shape)
             .overlay {
                 PointingHandCursorOverlay(
                     onHoverChange: { isHovering in
@@ -322,6 +417,20 @@ struct PointingHandCursorOverlay: NSViewRepresentable {
             return false
         }
 
+        private static func reconcileHoveredViews(in window: NSWindow?, excluding activeView: CursorAreaView? = nil) {
+            guard let window else { return }
+            let mouseInWindow = window.mouseLocationOutsideOfEventStream
+            for view in allViews.allObjects {
+                guard view.window === window, view.isMouseInside, view !== activeView else { continue }
+                let localPoint = view.convert(mouseInWindow, from: nil)
+                let stillInside = window.isVisible && !view.isHiddenOrHasHiddenAncestor && view.bounds.contains(localPoint)
+                if !stillInside {
+                    view.isMouseInside = false
+                    view.onHoverChange?(false)
+                }
+            }
+        }
+
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
             true
         }
@@ -365,6 +474,7 @@ struct PointingHandCursorOverlay: NSViewRepresentable {
         }
 
         override func mouseMoved(with event: NSEvent) {
+            Self.reconcileHoveredViews(in: self.window, excluding: self)
             if !isMouseInside {
                 isMouseInside = true
                 onHoverChange?(true)
@@ -373,6 +483,7 @@ struct PointingHandCursorOverlay: NSViewRepresentable {
         }
 
         override func mouseEntered(with event: NSEvent) {
+            Self.reconcileHoveredViews(in: self.window, excluding: self)
             if !isMouseInside {
                 isMouseInside = true
                 onHoverChange?(true)
@@ -409,6 +520,7 @@ struct PointingHandCursorOverlay: NSViewRepresentable {
                     self.onHoverChange?(false)
                 }
                 let hostWindow = self.window
+                Self.reconcileHoveredViews(in: hostWindow)
                 if Self.isMouseInsideAnyView(in: hostWindow) {
                     NSCursor.pointingHand.set()
                 } else {
@@ -614,6 +726,7 @@ struct PanelWindowMask: NSViewRepresentable {
 
             let frameView = contentView.superview ?? contentView
             Self.hideVisualEffectBackgrounds(in: frameView, stoppingAt: self)
+            Self.hideScrollIndicators(in: frameView)
 
             if !frameView.wantsLayer { frameView.wantsLayer = true }
             if let layer = frameView.layer {
@@ -643,6 +756,40 @@ struct PanelWindowMask: NSViewRepresentable {
                 hideVisualEffectBackgrounds(in: child, stoppingAt: stopView)
             }
         }
+
+        private static func hideScrollIndicators(in view: NSView) {
+            if let scrollView = view as? NSScrollView {
+                if !scrollView.hasVerticalScroller {
+                    scrollView.hasVerticalScroller = true
+                }
+                if scrollView.verticalScrollElasticity != .allowed {
+                    scrollView.verticalScrollElasticity = .allowed
+                }
+                if scrollView.hasHorizontalScroller {
+                    scrollView.hasHorizontalScroller = false
+                }
+                if scrollView.horizontalScrollElasticity != .none {
+                    scrollView.horizontalScrollElasticity = .none
+                }
+                if scrollView.scrollerStyle != .overlay {
+                    scrollView.scrollerStyle = .overlay
+                }
+                if !scrollView.autohidesScrollers {
+                    scrollView.autohidesScrollers = true
+                }
+                if let vScroller = scrollView.verticalScroller {
+                    if vScroller.alphaValue != 0 {
+                        vScroller.alphaValue = 0
+                    }
+                    if !vScroller.isHidden {
+                        vScroller.isHidden = true
+                    }
+                }
+            }
+            for child in view.subviews {
+                hideScrollIndicators(in: child)
+            }
+        }
     }
 }
 
@@ -669,7 +816,7 @@ struct InlinePromptTextField: NSViewRepresentable {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        field.font = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .medium)
         field.lineBreakMode = .byTruncatingTail
         field.cell?.wraps = false
         field.cell?.isScrollable = true
@@ -716,13 +863,17 @@ struct InlinePromptTextField: NSViewRepresentable {
         field.lastDark = dark
         field.lastPlaceholder = placeholder
 
-        field.textColor = dark ? NSColor(white: 0.94, alpha: 1.0) : NSColor(white: 0.12, alpha: 1.0)
-        let placeholderColor = dark ? NSColor(white: 0.46, alpha: 1.0) : NSColor(white: 0.54, alpha: 1.0)
+        field.textColor = dark
+            ? NSColor(srgbRed: 236.0 / 255, green: 236.0 / 255, blue: 238.0 / 255, alpha: 1.0)
+            : NSColor(srgbRed: 38.0 / 255, green: 38.0 / 255, blue: 40.0 / 255, alpha: 1.0)
+        let placeholderColor = dark
+            ? NSColor(srgbRed: 108.0 / 255, green: 108.0 / 255, blue: 112.0 / 255, alpha: 1.0)
+            : NSColor(srgbRed: 154.0 / 255, green: 154.0 / 255, blue: 157.0 / 255, alpha: 1.0)
         field.placeholderAttributedString = NSAttributedString(
             string: placeholder,
             attributes: [
                 .foregroundColor: placeholderColor,
-                .font: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular),
+                .font: NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular),
             ]
         )
     }
@@ -862,4 +1013,3 @@ struct InlinePromptTextField: NSViewRepresentable {
         }
     }
 }
-
