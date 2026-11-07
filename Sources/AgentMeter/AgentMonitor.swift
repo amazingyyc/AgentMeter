@@ -138,6 +138,33 @@ struct GitDiffSummary: Equatable, Sendable {
     }
 }
 
+struct AgentTodoItem: Equatable, Sendable {
+    enum Status: String, Equatable, Sendable {
+        case completed
+        case inProgress
+        case pending
+    }
+
+    let title: String
+    let status: Status
+}
+
+struct AgentTaskProgress: Equatable, Sendable {
+    let completedCount: Int
+    let totalCount: Int
+    let activeStepTitle: String?
+    var activeSubagentCount: Int = 0
+    var items: [AgentTodoItem] = []
+
+    var isEmpty: Bool {
+        totalCount == 0 && activeSubagentCount == 0
+    }
+
+    var isAllCompleted: Bool {
+        totalCount > 0 && completedCount >= totalCount
+    }
+}
+
 struct LaunchWorkspaceItem: Identifiable, Equatable, Sendable {
     let path: String
     var sshTarget: String? = nil
@@ -193,6 +220,7 @@ struct AgentActivityItem: Identifiable, Equatable, Sendable {
     var isGitWorktree: Bool = false
     var hasWorkspaceCollision: Bool = false
     var collisionPeerCount: Int = 0
+    var taskProgress: AgentTaskProgress? = nil
 
     var terminalHost: TerminalHostKind {
         if ghosttyPane != nil { return .ghostty }
@@ -327,7 +355,19 @@ final class AgentActivityTracker {
                         contextPercentUsed: 38,
                         gitDiff: GitDiffSummary(changedFiles: 4, insertions: 64, deletions: 22),
                         gitBranch: "feat/worktree-sched",
-                        isGitWorktree: true
+                        isGitWorktree: true,
+                        taskProgress: AgentTaskProgress(
+                            completedCount: 2,
+                            totalCount: 4,
+                            activeStepTitle: en ? "Benchmarking work-stealing deque" : "基准测试无锁双端队列",
+                            activeSubagentCount: 1,
+                            items: [
+                                AgentTodoItem(title: en ? "Inspect scheduler contention profile" : "分析调度器锁竞争热点", status: .completed),
+                                AgentTodoItem(title: en ? "Replace mutex with Chase-Lev deque" : "使用 Chase-Lev 双端队列替换互斥锁", status: .completed),
+                                AgentTodoItem(title: en ? "Benchmarking work-stealing deque" : "基准测试无锁双端队列", status: .inProgress),
+                                AgentTodoItem(title: en ? "Run loom concurrency verification" : "运行 loom 并发正确性验证", status: .pending),
+                            ]
+                        )
                     ),
                     AgentActivityItem(
                         id: "demo-claude",
@@ -354,7 +394,20 @@ final class AgentActivityTracker {
                         gitBranch: "refactor/router",
                         isGitWorktree: false,
                         hasWorkspaceCollision: true,
-                        collisionPeerCount: 1
+                        collisionPeerCount: 1,
+                        taskProgress: AgentTaskProgress(
+                            completedCount: 3,
+                            totalCount: 5,
+                            activeStepTitle: en ? "Run router integration tests" : "运行路由集成测试套件",
+                            activeSubagentCount: 0,
+                            items: [
+                                AgentTodoItem(title: en ? "Extract typed route context" : "提取类型化路由上下文", status: .completed),
+                                AgentTodoItem(title: en ? "Migrate auth & rate-limit middlewares" : "迁移鉴权与限流中间件", status: .completed),
+                                AgentTodoItem(title: en ? "Update OpenAPI route handlers" : "更新 OpenAPI 路由处理器", status: .completed),
+                                AgentTodoItem(title: en ? "Run router integration tests" : "运行路由集成测试套件", status: .inProgress),
+                                AgentTodoItem(title: en ? "Clean up legacy router adapter" : "清理旧版路由适配器", status: .pending),
+                            ]
+                        )
                     ),
                     AgentActivityItem(
                         id: "demo-copilot",
@@ -377,7 +430,18 @@ final class AgentActivityTracker {
                         contextPercentUsed: 22,
                         gitDiff: GitDiffSummary(changedFiles: 1, insertions: 18, deletions: 4),
                         gitBranch: "fix/oauth-race",
-                        isGitWorktree: false
+                        isGitWorktree: false,
+                        taskProgress: AgentTaskProgress(
+                            completedCount: 3,
+                            totalCount: 3,
+                            activeStepTitle: nil,
+                            activeSubagentCount: 0,
+                            items: [
+                                AgentTodoItem(title: en ? "Reproduce concurrent refresh race" : "复现并发 Token 刷新竞态", status: .completed),
+                                AgentTodoItem(title: en ? "Add singleflight mutex around token refresh" : "添加 singleflight 刷新互斥锁", status: .completed),
+                                AgentTodoItem(title: en ? "Verify unit & race detector tests" : "通过单元测试与竞态检测", status: .completed),
+                            ]
+                        )
                     ),
                     AgentActivityItem(
                         id: "demo-agy",
@@ -1419,7 +1483,8 @@ final class AgentActivityTracker {
                         pid: proc.pid,
                         tty: proc.tty ?? ghosttyEntry?.ttyName,
                         rexPane: rexEntry?.location,
-                        ghosttyPane: ghosttyEntry?.location
+                        ghosttyPane: ghosttyEntry?.location,
+                        taskProgress: matchingSession?.taskProgress
                     )
                 )
             }
@@ -1654,6 +1719,13 @@ final class AgentActivityTracker {
                         title: rexEntry?.rawTitle ?? matchedGhostty?.rawTitle ?? results[idx].title
                     )
                 }
+            }
+            if results[idx].taskProgress == nil {
+                let rexEntry = results[idx].pid.flatMap { rexMap[$0] }
+                results[idx].taskProgress = extractTaskProgressFromTerminal(
+                    tail: rexEntry?.screenTail ?? matchedGhostty?.screenTail,
+                    previewLines: results[idx].terminalPreviewLines
+                )
             }
         }
 
@@ -2068,6 +2140,74 @@ final class AgentActivityTracker {
         return nil
     }
 
+    private nonisolated static func buildTaskProgress(
+        items: [AgentTodoItem],
+        activeSubagentCount: Int = 0
+    ) -> AgentTaskProgress? {
+        let completed = items.filter { $0.status == .completed }.count
+        let total = items.count
+        guard total > 0 || activeSubagentCount > 0 else { return nil }
+        let activeTitle = items.first(where: { $0.status == .inProgress })?.title
+            ?? items.first(where: { $0.status == .pending })?.title
+        return AgentTaskProgress(
+            completedCount: completed,
+            totalCount: total,
+            activeStepTitle: activeTitle,
+            activeSubagentCount: max(0, activeSubagentCount),
+            items: Array(items.prefix(12))
+        )
+    }
+
+    private nonisolated static func extractTaskProgressFromTerminal(
+        tail: String?,
+        previewLines: [String]
+    ) -> AgentTaskProgress? {
+        var sourceLines: [String] = []
+        if let tail, !tail.isEmpty {
+            sourceLines.append(contentsOf: tail.split(separator: "\n").suffix(30).map(String.init))
+        } else {
+            sourceLines.append(contentsOf: previewLines)
+        }
+        guard !sourceLines.isEmpty else { return nil }
+
+        var todoItems: [AgentTodoItem] = []
+        for rawLine in sourceLines {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            let statusAndRest: (AgentTodoItem.Status, Substring)? = {
+                for prefix in ["☒ ", "☑ ", "[x] ", "[X] ", "- [x] ", "- [X] ", "✔ "] {
+                    if trimmed.hasPrefix(prefix) {
+                        return (.completed, trimmed.dropFirst(prefix.count))
+                    }
+                }
+                for prefix in ["◐ ", "▶ ", "[-] ", "[/] ", "- [/] ", "- [-] "] {
+                    if trimmed.hasPrefix(prefix) {
+                        return (.inProgress, trimmed.dropFirst(prefix.count))
+                    }
+                }
+                for prefix in ["☐ ", "[ ] ", "- [ ] "] {
+                    if trimmed.hasPrefix(prefix) {
+                        return (.pending, trimmed.dropFirst(prefix.count))
+                    }
+                }
+                return nil
+            }()
+
+            if let (status, rest) = statusAndRest {
+                let title = rest.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !title.isEmpty, title.count <= 140 {
+                    todoItems.append(AgentTodoItem(title: title, status: status))
+                }
+            }
+        }
+
+        if todoItems.count >= 2 {
+            return buildTaskProgress(items: todoItems, activeSubagentCount: 0)
+        }
+        return nil
+    }
+
     // MARK: - Process Table & CWD Inspection
 
     private struct ProcessEntry {
@@ -2288,6 +2428,7 @@ final class AgentActivityTracker {
         let fallbackTitle: String?
         let isTaskRunning: Bool
         let updatedAt: Date
+        var taskProgress: AgentTaskProgress? = nil
 
         var workspaceName: String {
             let name = URL(fileURLWithPath: cwdPath).lastPathComponent
@@ -2623,27 +2764,75 @@ final class AgentActivityTracker {
         let tailStr = String(data: tailData, encoding: .utf8) ?? ""
 
         var lastStarted = false
+        var latestPlanItems: [AgentTodoItem] = []
         for line in tailStr.split(separator: "\n") {
             if line.contains("\"type\":\"task_started\"") {
                 lastStarted = true
             } else if line.contains("\"type\":\"task_complete\"") || line.contains("\"type\":\"turn_aborted\"") {
                 lastStarted = false
             }
+            if line.contains("\"update_plan\"") || line.contains("\"plan_update\"") {
+                if let parsed = parseCodexPlanItems(fromJSONLine: String(line)), !parsed.isEmpty {
+                    latestPlanItems = parsed
+                }
+            }
         }
         let activelyWriting = activelyWritingWindow && lastStarted
         let isRunning = lastStarted || activelyWriting
+        let taskProgress = buildTaskProgress(items: latestPlanItems, activeSubagentCount: 0)
 
         let info = CodexSessionInfo(
             sessionID: sessionID,
             cwdPath: cwdPath,
             fallbackTitle: fallbackTitle,
             isTaskRunning: isRunning,
-            updatedAt: modDate
+            updatedAt: modDate,
+            taskProgress: taskProgress
         )
         if !activelyWritingWindow {
             DiscoveryCache.shared.setCachedCodexRollout(info, path: url.path, modDate: modDate)
         }
         return info
+    }
+
+    private nonisolated static func parseCodexPlanItems(fromJSONLine line: String) -> [AgentTodoItem]? {
+        guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+              let payload = json["payload"] as? [String: Any] else { return nil }
+
+        var rawPlanArray: [[String: Any]]?
+        if let directPlan = payload["plan"] as? [[String: Any]] {
+            rawPlanArray = directPlan
+        } else if let argsDict = payload["arguments"] as? [String: Any],
+                  let plan = argsDict["plan"] as? [[String: Any]] {
+            rawPlanArray = plan
+        } else if let argsStr = payload["arguments"] as? String,
+                  let argsData = argsStr.data(using: .utf8),
+                  let argsDict = try? JSONSerialization.jsonObject(with: argsData) as? [String: Any],
+                  let plan = argsDict["plan"] as? [[String: Any]] {
+            rawPlanArray = plan
+        }
+        guard let rawPlanArray, !rawPlanArray.isEmpty else { return nil }
+
+        var items: [AgentTodoItem] = []
+        for entry in rawPlanArray {
+            let rawTitle = (entry["step"] as? String)
+                ?? (entry["content"] as? String)
+                ?? (entry["title"] as? String)
+            guard let title = rawTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+                continue
+            }
+            let rawStatus = (entry["status"] as? String)?.lowercased() ?? "pending"
+            let status: AgentTodoItem.Status
+            if rawStatus == "completed" || rawStatus == "done" {
+                status = .completed
+            } else if rawStatus == "in_progress" || rawStatus == "inprogress" || rawStatus == "active" || rawStatus == "running" {
+                status = .inProgress
+            } else {
+                status = .pending
+            }
+            items.append(AgentTodoItem(title: title, status: status))
+        }
+        return items.isEmpty ? nil : items
     }
 
     // MARK: - Claude Code CLI Session Parser
@@ -2661,6 +2850,7 @@ final class AgentActivityTracker {
         let aiTitle: String?
         let lastPrompt: String?
         let modDate: Date?
+        let taskProgress: AgentTaskProgress?
     }
 
     private nonisolated static func inspectClaudeSessions(
@@ -2760,7 +2950,8 @@ final class AgentActivityTracker {
                     pid: proc.pid,
                     tty: proc.tty ?? ghosttyEntry?.ttyName,
                     rexPane: rexEntry?.location,
-                    ghosttyPane: ghosttyEntry?.location
+                    ghosttyPane: ghosttyEntry?.location,
+                    taskProgress: transcript?.taskProgress
                 )
             )
         }
@@ -2852,24 +3043,106 @@ final class AgentActivityTracker {
 
         var aiTitle: String?
         var lastPrompt: String?
+        var latestTodos: [AgentTodoItem] = []
+        var inFlightSubagentToolIDs = Set<String>()
         for line in text.split(separator: "\n") {
-            if line.contains("\"ai-title\""),
-               let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+            let lineStr = String(line)
+            if lineStr.contains("\"ai-title\""),
+               let json = try? JSONSerialization.jsonObject(with: Data(lineStr.utf8)) as? [String: Any],
                let raw = cleanSessionTitle(json["aiTitle"] as? String) {
                 aiTitle = raw
-            } else if line.contains("\"last-prompt\""),
-                      let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+            } else if lineStr.contains("\"last-prompt\""),
+                      let json = try? JSONSerialization.jsonObject(with: Data(lineStr.utf8)) as? [String: Any],
                       let raw = json["lastPrompt"] as? String,
                       !raw.hasPrefix("/"),
                       let cleaned = cleanSessionTitle(raw) {
                 lastPrompt = cleaned
             }
+            if lineStr.contains("\"TodoWrite\"") || lineStr.contains("\"todos\"") || lineStr.contains("\"newTodos\"") || lineStr.contains("\"tool_use\"") || lineStr.contains("\"tool_result\"") {
+                if let json = try? JSONSerialization.jsonObject(with: Data(lineStr.utf8)) as? [String: Any] {
+                    if let parsedTodos = parseClaudeTodos(fromJSON: json), !parsedTodos.isEmpty {
+                        latestTodos = parsedTodos
+                    }
+                    updateClaudeSubagentTracking(fromJSON: json, inFlightToolIDs: &inFlightSubagentToolIDs)
+                }
+            }
         }
-        let summary = ClaudeTranscriptSummary(aiTitle: aiTitle, lastPrompt: lastPrompt, modDate: modDate)
+        let taskProgress = buildTaskProgress(
+            items: latestTodos,
+            activeSubagentCount: inFlightSubagentToolIDs.count
+        )
+        let summary = ClaudeTranscriptSummary(
+            aiTitle: aiTitle,
+            lastPrompt: lastPrompt,
+            modDate: modDate,
+            taskProgress: taskProgress
+        )
         if let modDate {
             DiscoveryCache.shared.setCachedClaudeTranscript(summary, path: candidateURL.path, modDate: modDate)
         }
         return summary
+    }
+
+    private nonisolated static func parseClaudeTodos(fromJSON json: [String: Any]) -> [AgentTodoItem]? {
+        var rawArray: [[String: Any]]?
+        if let direct = json["todos"] as? [[String: Any]], !direct.isEmpty {
+            rawArray = direct
+        } else if let toolResult = json["toolUseResult"] as? [String: Any],
+                  let newTodos = toolResult["newTodos"] as? [[String: Any]], !newTodos.isEmpty {
+            rawArray = newTodos
+        } else if let message = json["message"] as? [String: Any],
+                  let contents = message["content"] as? [[String: Any]] {
+            for block in contents {
+                if (block["type"] as? String) == "tool_use",
+                   (block["name"] as? String) == "TodoWrite",
+                   let input = block["input"] as? [String: Any],
+                   let todos = input["todos"] as? [[String: Any]], !todos.isEmpty {
+                    rawArray = todos
+                }
+            }
+        }
+        guard let rawArray, !rawArray.isEmpty else { return nil }
+
+        var items: [AgentTodoItem] = []
+        for entry in rawArray {
+            let rawTitle = (entry["content"] as? String)
+                ?? (entry["title"] as? String)
+                ?? (entry["step"] as? String)
+            guard let title = rawTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+                continue
+            }
+            let rawStatus = (entry["status"] as? String)?.lowercased() ?? "pending"
+            let status: AgentTodoItem.Status
+            if rawStatus == "completed" || rawStatus == "done" {
+                status = .completed
+            } else if rawStatus == "in_progress" || rawStatus == "inprogress" || rawStatus == "active" {
+                status = .inProgress
+            } else {
+                status = .pending
+            }
+            items.append(AgentTodoItem(title: title, status: status))
+        }
+        return items.isEmpty ? nil : items
+    }
+
+    private nonisolated static func updateClaudeSubagentTracking(
+        fromJSON json: [String: Any],
+        inFlightToolIDs: inout Set<String>
+    ) {
+        guard let message = json["message"] as? [String: Any],
+              let contents = message["content"] as? [[String: Any]] else { return }
+        for block in contents {
+            let blockType = block["type"] as? String
+            if blockType == "tool_use",
+               let name = block["name"] as? String,
+               (name == "Task" || name == "Agent"),
+               let id = block["id"] as? String, !id.isEmpty {
+                inFlightToolIDs.insert(id)
+            } else if blockType == "tool_result",
+                      let toolUseID = block["tool_use_id"] as? String {
+                inFlightToolIDs.remove(toolUseID)
+            }
+        }
     }
 
     // MARK: - Copilot CLI Session Parser
@@ -3078,6 +3351,38 @@ final class AgentActivityTracker {
 
     // MARK: - Antigravity CLI Session Parser
 
+    private struct AntigravityProcessFiles {
+        var lockedConversationID: String?
+        var logURL: URL?
+    }
+
+    private struct AntigravityLogState {
+        var isPending: Bool
+        var isShutDown: Bool
+        var modDate: Date?
+        var conversationID: String?
+        var lastPrompt: String?
+        var hasConversationActivity: Bool
+    }
+
+    private struct AntigravityConversationRecord {
+        var conversationID: String
+        var cwdPath: String
+        var aiTitle: String?
+        var previewTitle: String?
+        var firstPrompt: String?
+        var latestPrompt: String?
+        var allPrompts: [String] = []
+        var updatedDate: Date
+        var isSubagent: Bool = false
+    }
+
+    private struct AntigravityConversationIndex {
+        var byConversationID: [String: AntigravityConversationRecord] = [:]
+        var unassignedPromptByWorkspace: [String: String] = [:]
+        var subagentConversationIDs: Set<String> = []
+    }
+
     private nonisolated static func inspectAntigravitySessions(
         home: URL,
         liveProcesses: [ProcessEntry],
@@ -3085,15 +3390,59 @@ final class AgentActivityTracker {
         ghosttyMap: [Int32: GhosttyTerminalEntry]
     ) -> [AgentActivityItem] {
         guard !liveProcesses.isEmpty else { return [] }
-        let logURL = home.appendingPathComponent(".gemini/antigravity-cli/cli.log")
-        let historyURL = home.appendingPathComponent(".gemini/antigravity-cli/history.jsonl")
-        let logState = parseAntigravityLogTail(logURL)
-        let latestHistory = parseAntigravityLatestHistory(historyURL)
+        let defaultLogURL = home.appendingPathComponent(".gemini/antigravity-cli/cli.log")
+        let convIndex = loadAntigravityConversationIndex(home: home)
+        var matchedConversationIDs = Set<String>()
 
         var items: [AgentActivityItem] = []
         for proc in liveProcesses {
             let rexEntry = rexMap[proc.pid]
             let ghosttyEntry = rexEntry == nil ? ghosttyMap[proc.pid] : nil
+            let procFiles = inspectAntigravityProcessFiles(pid: proc.pid)
+            let effectiveLogURL = procFiles.logURL ?? (liveProcesses.count == 1 ? defaultLogURL : nil)
+            let logState = effectiveLogURL.map { parseAntigravityLogTail($0) }
+                ?? AntigravityLogState(isPending: false, isShutDown: false, modDate: nil, conversationID: nil, lastPrompt: nil, hasConversationActivity: false)
+
+            let en = AppLanguage.current == .english
+            let effectiveCwd = !proc.cwdPath.isEmpty ? proc.cwdPath : (rexEntry?.cwdPath ?? ghosttyEntry?.cwdPath ?? "")
+            let screenPrompts = rexEntry?.screenPrompts ?? ghosttyEntry?.screenPrompts ?? []
+
+            let matchedConversationID: String? = {
+                if let exactCID = procFiles.lockedConversationID ?? logState.conversationID,
+                   !exactCID.isEmpty,
+                   !convIndex.subagentConversationIDs.contains(exactCID) {
+                    matchedConversationIDs.insert(exactCID)
+                    return exactCID
+                }
+                if !screenPrompts.isEmpty {
+                    for prompt in screenPrompts.reversed() {
+                        if let matched = convIndex.byConversationID.values
+                            .filter({ !$0.isSubagent && !matchedConversationIDs.contains($0.conversationID) })
+                            .sorted(by: { $0.updatedDate > $1.updatedDate })
+                            .first(where: { rec in
+                                rec.allPrompts.contains(where: { $0.contains(prompt) || prompt.contains($0) }) ||
+                                (rec.previewTitle.map { $0.contains(prompt) || prompt.contains($0) } ?? false) ||
+                                (rec.aiTitle.map { $0.contains(prompt) || prompt.contains($0) } ?? false)
+                            }) {
+                            matchedConversationIDs.insert(matched.conversationID)
+                            return matched.conversationID
+                        }
+                    }
+                }
+                let allowWorkspaceFallback = (procFiles.logURL == nil || logState.hasConversationActivity) && !effectiveCwd.isEmpty
+                if allowWorkspaceFallback,
+                   let wsMatched = convIndex.byConversationID.values
+                       .filter({ !$0.isSubagent && !matchedConversationIDs.contains($0.conversationID) && $0.cwdPath == effectiveCwd })
+                       .max(by: { $0.updatedDate < $1.updatedDate }) {
+                    matchedConversationIDs.insert(wsMatched.conversationID)
+                    return wsMatched.conversationID
+                }
+                return nil
+            }()
+
+            let matchedRecord = matchedConversationID.flatMap { convIndex.byConversationID[$0] }
+            let agyProgress = inspectAntigravityTaskProgress(home: home, conversationID: matchedConversationID)
+
             let status: AgentTaskStatus
             if let rexStatus = rexEntry?.status {
                 status = rexStatus
@@ -3111,75 +3460,397 @@ final class AgentActivityTracker {
             } else {
                 status = (logState.isPending || proc.cpu > 3.5) ? .working : .idle
             }
-            let en = AppLanguage.current == .english
-            let effectiveCwd = !proc.cwdPath.isEmpty ? proc.cwdPath : (ghosttyEntry?.cwdPath ?? "")
-            let workspace = effectiveCwd.isEmpty
-                ? (latestHistory.workspace ?? "Antigravity")
-                : {
-                    let name = URL(fileURLWithPath: effectiveCwd).lastPathComponent
-                    return name.isEmpty || name == "/" ? proc.workspaceName : name
-                }()
-            let sessionTitle = latestHistory.title
-                ?? rexEntry?.cleanTitle
-                ?? ghosttyEntry?.cleanTitle
-                ?? logState.lastPrompt
-                ?? (en ? "Antigravity Session" : "Antigravity 会话")
+
+            let resolvedCwd = !effectiveCwd.isEmpty ? effectiveCwd : (matchedRecord?.cwdPath ?? "")
+            let workspace: String = {
+                if !resolvedCwd.isEmpty {
+                    let name = URL(fileURLWithPath: resolvedCwd).lastPathComponent
+                    if !name.isEmpty && name != "/" {
+                        return name
+                    }
+                }
+                return proc.workspaceName.isEmpty ? "Antigravity" : proc.workspaceName
+            }()
+
+            let unassignedWorkspacePrompt: String? = {
+                guard procFiles.logURL == nil || logState.hasConversationActivity else { return nil }
+                return convIndex.unassignedPromptByWorkspace[resolvedCwd]
+            }()
+
+            let titleCandidates: [String?] = [
+                matchedRecord?.aiTitle,
+                rexEntry?.descriptiveTitle,
+                ghosttyEntry?.descriptiveTitle,
+                matchedRecord?.firstPrompt,
+                matchedRecord?.previewTitle,
+                matchedRecord?.latestPrompt,
+                logState.lastPrompt,
+                rexEntry?.latestScreenPrompt,
+                ghosttyEntry?.latestScreenPrompt,
+                unassignedWorkspacePrompt,
+                rexEntry?.cleanTitle,
+                ghosttyEntry?.cleanTitle,
+            ]
+            let defaultSessionTitle = en ? "Antigravity Session" : "Antigravity 会话"
+            let sessionTitle = titleCandidates.compactMap { $0 }.first ?? defaultSessionTitle
+
             let itemID = rexEntry.map { "rex-block-\($0.location.blockID)" }
                 ?? ghosttyEntry.map { "ghostty-term-\($0.location.terminalID)-pid-\(proc.pid)" }
                 ?? "antigravity-pid-\(proc.pid)"
             items.append(
                 AgentActivityItem(
                     id: itemID,
-                    sessionID: latestHistory.conversationID,
+                    sessionID: matchedConversationID,
                     family: .antigravity,
                     workspace: workspace,
-                    cwdPath: effectiveCwd,
+                    cwdPath: resolvedCwd,
                     title: sessionTitle,
                     status: status,
                     isFocusedInHost: rexEntry?.isFocusedInActiveWindow ?? ghosttyEntry?.isFocusedInActiveWindow ?? false,
                     detail: status == .needsInput
                         ? (en ? "Awaiting confirmation" : "等待确认")
                         : (status == .working ? (en ? "Generating response" : "正在生成响应") : (en ? "Terminal idle" : "终端待命")),
-                    updatedAt: logState.modDate ?? syntheticTimestampSentinel,
+                    updatedAt: logState.modDate ?? matchedRecord?.updatedDate ?? syntheticTimestampSentinel,
                     pid: proc.pid,
                     tty: proc.tty ?? ghosttyEntry?.ttyName,
                     rexPane: rexEntry?.location,
-                    ghosttyPane: ghosttyEntry?.location
+                    ghosttyPane: ghosttyEntry?.location,
+                    taskProgress: agyProgress
                 )
             )
         }
         return items
     }
 
-    private nonisolated static func parseAntigravityLogTail(_ url: URL) -> (isPending: Bool, isShutDown: Bool, modDate: Date?, lastPrompt: String?) {
+    private nonisolated static func inspectAntigravityProcessFiles(pid: Int32) -> AntigravityProcessFiles {
+        var result = AntigravityProcessFiles()
+
+        if let argsLine = processCommandLineArgs(pid: pid) {
+            let tokens = argsLine.split(separator: " ").map(String.init)
+            for idx in tokens.indices {
+                let tok = tokens[idx]
+                if (tok == "--conversation" || tok == "--resume"), idx + 1 < tokens.count {
+                    let candidate = tokens[idx + 1].trimmingCharacters(in: .whitespacesAndNewlines)
+                    if isLikelyAntigravityUUID(candidate) {
+                        result.lockedConversationID = candidate
+                    }
+                } else if tok.hasPrefix("--conversation=") {
+                    let candidate = String(tok.dropFirst("--conversation=".count))
+                    if isLikelyAntigravityUUID(candidate) {
+                        result.lockedConversationID = candidate
+                    }
+                }
+            }
+        }
+
+        let fdStride = Int32(MemoryLayout<proc_fdinfo>.stride)
+        let bufferBytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard bufferBytes > 0 else { return result }
+
+        let fdCount = Int(bufferBytes / fdStride) + 16
+        var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: fdCount)
+        let actualBytes = fds.withUnsafeMutableBytes { rawBuf -> Int32 in
+            guard let base = rawBuf.baseAddress else { return 0 }
+            return proc_pidinfo(pid, PROC_PIDLISTFDS, 0, base, Int32(rawBuf.count))
+        }
+        guard actualBytes > 0 else { return result }
+
+        let count = Int(actualBytes / fdStride)
+        let vnodeInfoSize = Int32(MemoryLayout<vnode_fdinfowithpath>.stride)
+        var vnodeInfo = vnode_fdinfowithpath()
+
+        for i in 0..<count {
+            let fd = fds[i]
+            guard fd.proc_fdtype == UInt32(PROX_FDTYPE_VNODE) else { continue }
+            let ret = proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDVNODEPATHINFO, &vnodeInfo, vnodeInfoSize)
+            guard ret == vnodeInfoSize else { continue }
+            let path = withUnsafePointer(to: &vnodeInfo.pvip.vip_path) { ptr in
+                ptr.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) { cStr in
+                    String(cString: cStr)
+                }
+            }
+            guard path.contains("/.gemini/antigravity-cli/") else { continue }
+
+            if path.contains("/presence/") && path.hasSuffix(".lock") {
+                let cid = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+                if isLikelyAntigravityUUID(cid) {
+                    result.lockedConversationID = cid
+                }
+            } else if path.contains("/log/cli-") && path.hasSuffix(".log") {
+                result.logURL = URL(fileURLWithPath: path)
+            }
+        }
+        return result
+    }
+
+    private nonisolated static func isLikelyAntigravityUUID(_ text: String) -> Bool {
+        guard text.count == 36 else { return false }
+        for (idx, ch) in text.enumerated() {
+            if idx == 8 || idx == 13 || idx == 18 || idx == 23 {
+                if ch != "-" { return false }
+            } else if !ch.isHexDigit {
+                return false
+            }
+        }
+        return true
+    }
+
+    private nonisolated static func isTrivialPromptInput(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        if trimmed.hasPrefix("/") { return true }
+        if trimmed.allSatisfy(\.isNumber) { return true }
+        let lower = trimmed.lowercased()
+        let trivialTokens: Set<String> = ["y", "n", "yes", "no", "ok", "clear", "exit", "quit", "q"]
+        return trivialTokens.contains(lower)
+    }
+
+    private nonisolated static func openSQLiteForReading(_ url: URL) -> OpaquePointer? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        var handle: OpaquePointer?
+        if sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+            sqlite3_busy_timeout(handle, 400)
+            return handle
+        }
+        if let handle { sqlite3_close(handle) }
+        handle = nil
+        if sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, nil) == SQLITE_OK {
+            sqlite3_busy_timeout(handle, 400)
+            return handle
+        }
+        if let handle { sqlite3_close(handle) }
+        return nil
+    }
+
+    private nonisolated static func parseISO8601Date(_ raw: String?) -> Date? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        if raw.hasPrefix("0001-01-01") { return nil }
+        let normalized = raw.replacingOccurrences(of: " ", with: "T")
+        let isoFractional = ISO8601DateFormatter()
+        isoFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = isoFractional.date(from: normalized) {
+            return date
+        }
+        let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+        return isoPlain.date(from: normalized)
+    }
+
+    private nonisolated static func loadAntigravityConversationIndex(home: URL) -> AntigravityConversationIndex {
+        var index = AntigravityConversationIndex()
+
+        let summariesURL = home.appendingPathComponent(".gemini/antigravity-cli/conversation_summaries.db")
+        if let db = openSQLiteForReading(summariesURL) {
+            defer { sqlite3_close(db) }
+            let sql = """
+            SELECT conversation_id, title, preview, workspace_uris, last_modified_time, parent_conversation_id, nesting_depth
+            FROM conversation_summaries
+            WHERE killed = 0
+            ORDER BY last_modified_time DESC
+            LIMIT 300;
+            """
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(stmt) }
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let cid = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+                    guard !cid.isEmpty else { continue }
+                    let rawTitle = sqlite3_column_text(stmt, 1).map { String(cString: $0) }
+                    let rawPreview = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
+                    let rawUris = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
+                    let rawTime = sqlite3_column_text(stmt, 4).map { String(cString: $0) }
+                    let parentID = sqlite3_column_text(stmt, 5).map { String(cString: $0) } ?? ""
+                    let nestingDepth = Int(sqlite3_column_int(stmt, 6))
+                    let isSubagent = !parentID.isEmpty || nestingDepth > 0
+                    if isSubagent {
+                        index.subagentConversationIDs.insert(cid)
+                    }
+
+                    var parsedCwd = home.path
+                    if let data = rawUris.data(using: .utf8),
+                       let arr = try? JSONSerialization.jsonObject(with: data) as? [String],
+                       let firstUri = arr.first,
+                       let url = URL(string: firstUri), url.isFileURL {
+                        parsedCwd = url.path
+                    }
+
+                    let aiTitle = cleanSessionTitle(rawTitle).flatMap { isTrivialPromptInput($0) ? nil : $0 }
+                    let previewTitle = cleanSessionTitle(rawPreview).flatMap { isTrivialPromptInput($0) ? nil : $0 }
+                    let updatedDate = parseISO8601Date(rawTime) ?? Date(timeIntervalSince1970: 0)
+                    index.byConversationID[cid] = AntigravityConversationRecord(
+                        conversationID: cid,
+                        cwdPath: parsedCwd,
+                        aiTitle: aiTitle,
+                        previewTitle: previewTitle,
+                        firstPrompt: nil,
+                        latestPrompt: nil,
+                        allPrompts: previewTitle.map { [$0] } ?? [],
+                        updatedDate: updatedDate,
+                        isSubagent: isSubagent
+                    )
+                }
+            }
+        }
+
+        let historyURL = home.appendingPathComponent(".gemini/antigravity-cli/history.jsonl")
+        if let data = try? Data(contentsOf: historyURL),
+           let text = String(data: data, encoding: .utf8) {
+            var pendingFirstPromptByWorkspace: [String: (prompt: String, date: Date)] = [:]
+            var seenConversationIDs = Set<String>()
+
+            for line in text.split(separator: "\n") {
+                guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
+                let ws = (json["workspace"] as? String) ?? home.path
+                let ts = (json["timestamp"] as? Double) ?? 0
+                let date = ts > 0 ? Date(timeIntervalSince1970: ts / 1000.0) : Date()
+                let isSlash = (json["type"] as? String) == "slash_command"
+                let display = json["display"] as? String
+                let cleanedPrompt: String? = {
+                    guard !isSlash, let display, !display.hasPrefix("/"),
+                          let cleaned = cleanSessionTitle(display),
+                          !isTrivialPromptInput(cleaned) else { return nil }
+                    return cleaned
+                }()
+
+                if let cid = json["conversationId"] as? String, !cid.isEmpty {
+                    let isFirstTimeSeeingCID = seenConversationIDs.insert(cid).inserted
+                    var rec = index.byConversationID[cid] ?? AntigravityConversationRecord(
+                        conversationID: cid,
+                        cwdPath: ws,
+                        aiTitle: nil,
+                        previewTitle: nil,
+                        firstPrompt: nil,
+                        latestPrompt: nil,
+                        allPrompts: [],
+                        updatedDate: date,
+                        isSubagent: index.subagentConversationIDs.contains(cid)
+                    )
+                    if date > rec.updatedDate {
+                        rec.updatedDate = date
+                    }
+                    if !ws.isEmpty {
+                        rec.cwdPath = ws
+                    }
+                    if isFirstTimeSeeingCID, let pending = pendingFirstPromptByWorkspace[ws] {
+                        if abs(date.timeIntervalSince(pending.date)) < 14400 {
+                            if rec.firstPrompt == nil {
+                                rec.firstPrompt = pending.prompt
+                            }
+                            if rec.latestPrompt == nil {
+                                rec.latestPrompt = pending.prompt
+                            }
+                            if !rec.allPrompts.contains(pending.prompt) {
+                                rec.allPrompts.insert(pending.prompt, at: 0)
+                            }
+                        }
+                        pendingFirstPromptByWorkspace.removeValue(forKey: ws)
+                    }
+                    if let cleanedPrompt {
+                        if rec.firstPrompt == nil {
+                            rec.firstPrompt = cleanedPrompt
+                        }
+                        rec.latestPrompt = cleanedPrompt
+                        if rec.allPrompts.last != cleanedPrompt {
+                            rec.allPrompts.append(cleanedPrompt)
+                        }
+                    }
+                    index.byConversationID[cid] = rec
+                } else if let cleanedPrompt {
+                    pendingFirstPromptByWorkspace[ws] = (cleanedPrompt, date)
+                }
+            }
+
+            for (ws, pending) in pendingFirstPromptByWorkspace {
+                index.unassignedPromptByWorkspace[ws] = pending.prompt
+                // Also attach to the most recent conversation in that workspace if it has no prompts yet
+                if let targetCID = index.byConversationID.values
+                    .filter({ !$0.isSubagent && $0.cwdPath == ws && $0.firstPrompt == nil && $0.latestPrompt == nil })
+                    .max(by: { $0.updatedDate < $1.updatedDate })?.conversationID,
+                   var rec = index.byConversationID[targetCID] {
+                    rec.firstPrompt = pending.prompt
+                    if rec.latestPrompt == nil {
+                        rec.latestPrompt = pending.prompt
+                    }
+                    if !rec.allPrompts.contains(pending.prompt) {
+                        rec.allPrompts.append(pending.prompt)
+                    }
+                    index.byConversationID[targetCID] = rec
+                }
+            }
+        }
+
+        return index
+    }
+
+    private nonisolated static func inspectAntigravityTaskProgress(home: URL, conversationID: String?) -> AgentTaskProgress? {
+        guard let cid = conversationID, !cid.isEmpty else { return nil }
+        let taskURL = home.appendingPathComponent(".gemini/antigravity-cli/brain/\(cid)/task.md")
+        guard let text = try? String(contentsOf: taskURL, encoding: .utf8), !text.isEmpty else {
+            return nil
+        }
+        return extractTaskProgressFromTerminal(tail: text, previewLines: [])
+    }
+
+    private nonisolated static func parseAntigravityLogTail(_ url: URL) -> AntigravityLogState {
         let resolved = url.resolvingSymlinksInPath()
         let modDate = (try? resolved.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
         guard let handle = try? FileHandle(forReadingFrom: resolved) else {
-            return (false, true, modDate, nil)
+            return AntigravityLogState(
+                isPending: false,
+                isShutDown: true,
+                modDate: modDate,
+                conversationID: nil,
+                lastPrompt: nil,
+                hasConversationActivity: false
+            )
         }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
-        let offset = size > 24576 ? size - 24576 : 0
+        let offset = size > 65536 ? size - 65536 : 0
         try? handle.seek(toOffset: offset)
         let data = (try? handle.readToEnd()) ?? Data()
         let text = String(data: data, encoding: .utf8) ?? ""
 
         var isPending = false
         var isShutDown = false
+        var conversationID: String?
         var lastPrompt: String?
+        var hasConversationActivity = size > 65536
+
+        let cidMarkers = [
+            "Created conversation ",
+            "Streaming conversation ",
+            "Forwarding user message to conversation ",
+            "Sending user message to conversation ",
+            "for conversation ",
+            "cascade_id:",
+        ]
+
         for line in text.split(separator: "\n") {
             if let markerRange = line.range(of: "HandleUserInput called with text: \"") {
+                hasConversationActivity = true
                 let rest = line[markerRange.upperBound...]
                 if let endQuote = rest.lastIndex(of: "\"") {
                     let candidate = String(rest[..<endQuote])
-                    if !candidate.hasPrefix("/"), let cleaned = cleanSessionTitle(candidate) {
+                    if !isTrivialPromptInput(candidate), let cleaned = cleanSessionTitle(candidate), !isTrivialPromptInput(cleaned) {
                         lastPrompt = cleaned
+                    }
+                }
+            }
+            for marker in cidMarkers {
+                if let range = line.range(of: marker) {
+                    let rest = line[range.upperBound...]
+                    let candidate = String(rest.prefix(36))
+                    if isLikelyAntigravityUUID(candidate) {
+                        conversationID = candidate
+                        hasConversationActivity = true
                     }
                 }
             }
             if line.contains("Forwarding user message to conversation") || line.contains("Sending user message to conversation") {
                 isPending = true
                 isShutDown = false
+                hasConversationActivity = true
             } else if line.contains("clearing ResponsePending") || line.contains("Full redraw completed") {
                 isPending = false
             } else if line.contains("CLI program exited, shutting down") || line.contains("Language server shutting down") {
@@ -3187,35 +3858,14 @@ final class AgentActivityTracker {
                 isShutDown = true
             }
         }
-        return (isPending, isShutDown, modDate, lastPrompt)
-    }
-
-    private nonisolated static func parseAntigravityLatestHistory(_ url: URL) -> (conversationID: String?, workspace: String?, title: String?) {
-        var conversationID: String?
-        var workspace: String?
-        var title: String?
-        if let data = try? Data(contentsOf: url),
-           let text = String(data: data, encoding: .utf8) {
-            for line in text.split(separator: "\n").reversed() {
-                guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] else { continue }
-                if conversationID == nil, let cid = json["conversationId"] as? String, !cid.isEmpty {
-                    conversationID = cid
-                }
-                if workspace == nil, let ws = json["workspace"] as? String, !ws.isEmpty {
-                    let name = URL(fileURLWithPath: ws).lastPathComponent
-                    workspace = name.isEmpty ? ws : name
-                }
-                if title == nil,
-                   (json["type"] as? String) != "slash_command",
-                   let display = json["display"] as? String,
-                   !display.hasPrefix("/"),
-                   let cleaned = cleanSessionTitle(display) {
-                    title = cleaned
-                }
-                if conversationID != nil && workspace != nil && title != nil { break }
-            }
-        }
-        return (conversationID, workspace, title)
+        return AntigravityLogState(
+            isPending: isPending,
+            isShutDown: isShutDown,
+            modDate: modDate,
+            conversationID: conversationID,
+            lastPrompt: lastPrompt,
+            hasConversationActivity: hasConversationActivity
+        )
     }
 
     private nonisolated static func extractUserPromptAfterEnvironment(_ raw: String) -> String? {
@@ -3416,6 +4066,22 @@ final class AgentActivityTracker {
             }
             if let suffixRange = text.range(of: " - Codex CLI") {
                 text = String(text[..<suffixRange.lowerBound])
+            }
+            if let suffixRange = text.range(of: " - Antigravity CLI") {
+                text = String(text[..<suffixRange.lowerBound])
+            }
+            if let suffixRange = text.range(of: " - Antigravity") {
+                text = String(text[..<suffixRange.lowerBound])
+            }
+            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let lower = text.lowercased()
+            let bareBinaryNames: Set<String> = [
+                "agy", "antigravity", "antigravity cli", "antigravity-cli",
+                "claude", "claude code", "codex", "codex cli", "copilot", "github copilot",
+                "zsh", "-zsh", "bash", "-bash", "fish", "sh", "tmux",
+            ]
+            if bareBinaryNames.contains(lower) {
+                return nil
             }
             return text.isEmpty ? nil : text
         }
@@ -3634,12 +4300,16 @@ final class AgentActivityTracker {
                     candidate = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
                 } else if trimmed.hasPrefix("❯ ") {
                     candidate = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                } else if trimmed.hasPrefix("> ") {
+                    candidate = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
                 }
                 if let candidate,
+                   !candidate.hasPrefix("/"),
                    !candidate.contains("Ask Codex to do anything"),
                    candidate.range(of: "^\\d+\\.\\s", options: .regularExpression) == nil,
                    !candidate.hasPrefix("Thought for "),
-                   let cleaned = cleanSessionTitle(candidate) {
+                   let cleaned = cleanSessionTitle(candidate),
+                   !isTrivialPromptInput(cleaned) {
                     prompts.append(cleaned)
                 }
             }
@@ -4101,8 +4771,9 @@ final class AgentActivityTracker {
                       for line in string.gmatch(fmt.content, "[^\\r\\n]+") do
                         local p1 = string.match(line, "^%s*›%s+(.+)$")
                         local p2 = string.match(line, "^%s*❯%s+(.+)$")
-                        local p = p1 or p2
-                        if p and not string.find(p, "Ask Codex to do anything") and not string.find(p, "^%d+%.%s") and not string.find(p, "^Thought for ") then
+                        local p3 = string.match(line, "^%s*>%s+(.+)$")
+                        local p = p1 or p2 or p3
+                        if p and not string.find(p, "^/") and not string.find(p, "Ask Codex to do anything") and not string.find(p, "^%d+%.%s") and not string.find(p, "^Thought for ") then
                           table.insert(prompts, p)
                         end
                       end
@@ -4159,7 +4830,10 @@ final class AgentActivityTracker {
             let screen = row["screen"] as? String
             let tail = row["tail"] as? String
             let rawPrompts = (row["prompts"] as? [String]) ?? []
-            let cleanedPrompts = rawPrompts.compactMap { cleanSessionTitle($0) }
+            let cleanedPrompts = rawPrompts.compactMap { raw -> String? in
+                guard let cleaned = cleanSessionTitle(raw), !isTrivialPromptInput(cleaned) else { return nil }
+                return cleaned
+            }
             let isFocused = (row["is_focused"] as? Bool) ?? false
             let isSSH = (row["is_ssh"] as? Bool) ?? (procName.lowercased() == "ssh")
             let sshTarget: String? = isSSH ? extractSSHTarget(pid: pid) : nil
@@ -5708,89 +6382,8 @@ final class AgentActivityTracker {
         }
 
         // 4. Antigravity CLI History from ~/.gemini/antigravity-cli/conversation_summaries.db, conversations/*.db & history.jsonl
-        struct AgyHistAcc {
-            var conversationID: String
-            var cwdPath: String
-            var title: String?
-            var updatedDate: Date
-        }
-        var agyByCid: [String: AgyHistAcc] = [:]
-
-        let agySummariesURL = home.appendingPathComponent(".gemini/antigravity-cli/conversation_summaries.db")
-        if let agyDB = openSQLiteForReading(agySummariesURL) {
-            defer { sqlite3_close(agyDB) }
-            let sql = """
-            SELECT conversation_id, title, preview, workspace_uris, last_modified_time
-            FROM conversation_summaries
-            WHERE killed = 0
-            ORDER BY last_modified_time DESC
-            LIMIT 300;
-            """
-            var stmt: OpaquePointer?
-            if sqlite3_prepare_v2(agyDB, sql, -1, &stmt, nil) == SQLITE_OK {
-                defer { sqlite3_finalize(stmt) }
-                while sqlite3_step(stmt) == SQLITE_ROW {
-                    let cid = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
-                    guard !cid.isEmpty else { continue }
-                    let rawTitle = sqlite3_column_text(stmt, 1).map { String(cString: $0) }
-                    let rawPreview = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
-                    let rawUris = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? ""
-                    let rawTime = sqlite3_column_text(stmt, 4).map { String(cString: $0) }
-
-                    var parsedCwd = home.path
-                    if let data = rawUris.data(using: .utf8),
-                       let arr = try? JSONSerialization.jsonObject(with: data) as? [String],
-                       let firstUri = arr.first,
-                       let url = URL(string: firstUri), url.isFileURL {
-                        parsedCwd = url.path
-                    }
-
-                    let title = cleanSessionTitle(rawTitle) ?? cleanSessionTitle(rawPreview)
-                    let updatedDate = parseISO8601Date(rawTime) ?? Date()
-                    agyByCid[cid] = AgyHistAcc(
-                        conversationID: cid,
-                        cwdPath: parsedCwd,
-                        title: title,
-                        updatedDate: updatedDate
-                    )
-                }
-            }
-        }
-
-        let agyHistoryURL = home.appendingPathComponent(".gemini/antigravity-cli/history.jsonl")
-        if let data = try? Data(contentsOf: agyHistoryURL),
-           let text = String(data: data, encoding: .utf8) {
-            for line in text.split(separator: "\n") {
-                guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-                      let cid = json["conversationId"] as? String, !cid.isEmpty else { continue }
-                let ws = (json["workspace"] as? String) ?? home.path
-                let ts = (json["timestamp"] as? Double) ?? 0
-                let date = ts > 0 ? Date(timeIntervalSince1970: ts / 1000.0) : Date()
-                let isSlash = (json["type"] as? String) == "slash_command"
-                let display = json["display"] as? String
-                let promptTitle: String? = (!isSlash && display?.hasPrefix("/") == false) ? cleanSessionTitle(display) : nil
-
-                if var existing = agyByCid[cid] {
-                    if date > existing.updatedDate {
-                        existing.updatedDate = date
-                    }
-                    if !ws.isEmpty {
-                        existing.cwdPath = ws
-                    }
-                    if existing.title == nil, let promptTitle {
-                        existing.title = promptTitle
-                    }
-                    agyByCid[cid] = existing
-                } else {
-                    agyByCid[cid] = AgyHistAcc(
-                        conversationID: cid,
-                        cwdPath: ws,
-                        title: promptTitle,
-                        updatedDate: date
-                    )
-                }
-            }
-        }
+        let agyConvIndex = loadAntigravityConversationIndex(home: home)
+        var agyByCid = agyConvIndex.byConversationID.filter { !$0.value.isSubagent }
 
         let agyConvDir = home.appendingPathComponent(".gemini/antigravity-cli/conversations")
         if let dbFiles = try? FileManager.default.contentsOfDirectory(
@@ -5800,13 +6393,20 @@ final class AgentActivityTracker {
         ) {
             for fileURL in dbFiles where fileURL.pathExtension == "db" {
                 let cid = fileURL.deletingPathExtension().lastPathComponent
-                guard !cid.isEmpty, agyByCid[cid] == nil else { continue }
+                guard !cid.isEmpty,
+                      !agyConvIndex.subagentConversationIDs.contains(cid),
+                      agyByCid[cid] == nil else { continue }
                 let modDate = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date()
-                agyByCid[cid] = AgyHistAcc(
+                agyByCid[cid] = AntigravityConversationRecord(
                     conversationID: cid,
                     cwdPath: home.path,
-                    title: nil,
-                    updatedDate: modDate
+                    aiTitle: nil,
+                    previewTitle: nil,
+                    firstPrompt: nil,
+                    latestPrompt: nil,
+                    allPrompts: [],
+                    updatedDate: modDate,
+                    isSubagent: false
                 )
             }
         }
@@ -5814,7 +6414,13 @@ final class AgentActivityTracker {
         for item in agyByCid.values.sorted(by: { $0.updatedDate > $1.updatedDate }) {
             let shortID = String(item.conversationID.prefix(8))
             let unnamedFallback = en ? "Untitled Session (\(shortID))" : "未命名会话 (\(shortID))"
-            let title = item.title ?? unnamedFallback
+            let titleCandidates: [String?] = [
+                item.aiTitle,
+                item.firstPrompt,
+                item.previewTitle,
+                item.latestPrompt,
+            ]
+            let title = titleCandidates.compactMap { $0 }.first ?? unnamedFallback
             let wsName = URL(fileURLWithPath: item.cwdPath).lastPathComponent
             let workspace = wsName.isEmpty || wsName == "/" ? "Antigravity" : wsName
 
@@ -6507,6 +7113,15 @@ final class AgentActivityTracker {
                 sshPID: 42011,
                 sshTarget: "gpu-box"
             ),
+            GhosttyTerminalEntry(
+                location: GhosttyPaneLocation(windowID: "win-3", tabID: "tab-4", terminalID: "term-agy", ttyPath: "/dev/ttys094"),
+                pid: 42020,
+                ttyName: "ttys094",
+                cwdPath: "/Users/yyc/code",
+                rawTitle: "agy",
+                isFocusedInActiveWindow: false,
+                screenTail: "────────────────────\n> 对比国内cursor和copilot的价格\n> /title\nGemini 4 Argon (High) · ~/code · Context 2% used"
+            ),
         ]
 
         let ppidMap: [Int32: Int32] = [
@@ -6530,6 +7145,7 @@ final class AgentActivityTracker {
         let parseOK = (entries[0].detectedFamily == .claude && entries[0].inferredStatus == .needsInput && entries[0].cleanTitle == "Fix Ghostty jump")
             && (entries[1].detectedFamily == .codex && entries[1].inferredStatus == .working && entries[1].contextPercentUsed == 35)
             && (entries[2].detectedFamily == .copilot && entries[2].remoteCwdPath == "~/remote-repo" && entries[2].contextPercentUsed == 18)
+            && (entries[3].cleanTitle == nil && entries[3].latestScreenPrompt == "对比国内cursor和copilot的价格" && entries[3].contextPercentUsed == 2)
 
         // Verify PTY fallback for Ghostty prompt write, approval write, and interrupt
         var masterFD: Int32 = -1

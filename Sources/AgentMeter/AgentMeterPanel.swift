@@ -53,8 +53,10 @@ struct AgentMeterPanel: View {
     @State private var hoveredInterruptID: String?
     @State private var hoveredReplyToggleID: String?
     @State private var hoveredReplyFieldID: String?
-    @State private var hoveredQuickCompactID: String?
     @State private var hoveredQuickSendID: String?
+    @State private var hoveredQueueEditID: String?
+    @State private var hoveredQueueSendNowID: String?
+    @State private var hoveredQueueRemoveID: String?
     @State private var hoveredWorkspacePath: String?
     @State private var hoveredWorkspaceAgentKey: String?
     @State private var hoveredHistoryID: String?
@@ -193,8 +195,10 @@ struct AgentMeterPanel: View {
         hoveredInterruptID = nil
         hoveredReplyToggleID = nil
         hoveredReplyFieldID = nil
-        hoveredQuickCompactID = nil
         hoveredQuickSendID = nil
+        hoveredQueueEditID = nil
+        hoveredQueueSendNowID = nil
+        hoveredQueueRemoveID = nil
         hoveredWorkspacePath = nil
         hoveredWorkspaceAgentKey = nil
         hoveredHistoryID = nil
@@ -839,8 +843,10 @@ struct AgentMeterPanel: View {
         let isInterruptHovered = hoveredInterruptID == item.id
         let isReplyToggleHovered = hoveredReplyToggleID == item.id
         let isReplyFieldHovered = hoveredReplyFieldID == item.id
-        let isQuickCompactHovered = hoveredQuickCompactID == item.id
         let isQuickSendHovered = hoveredQuickSendID == item.id
+        let isQueueEditHovered = hoveredQueueEditID == item.id
+        let isQueueSendNowHovered = hoveredQueueSendNowID == item.id
+        let isQueueRemoveHovered = hoveredQueueRemoveID == item.id
         let isHovered = hoveredAgentID == item.id
             || isCloseHovered
             || isApprove1Hovered
@@ -849,8 +855,10 @@ struct AgentMeterPanel: View {
             || isInterruptHovered
             || isReplyToggleHovered
             || isReplyFieldHovered
-            || isQuickCompactHovered
             || isQuickSendHovered
+            || isQueueEditHovered
+            || isQueueSendNowHovered
+            || isQueueRemoveHovered
         let isSelected = isKeyboardNavigationActive && selectedAgentID == item.id
         let isHighlighted = isHovered || isSelected
         let familyColor = item.family.accentColor(dark: dark)
@@ -859,16 +867,22 @@ struct AgentMeterPanel: View {
         let hasDraft = !(replyDrafts[item.id]?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
         let isReplyFocused = focusedReplyAgentID == item.id
         let showInlineReply = expandedReplyAgentID == item.id || isReplyFocused || hasDraft
+        let queuedPrompts = model.queuedPrompts(for: item)
+        let hasQueuedPrompts = !queuedPrompts.isEmpty
         let isLongRunning = item.isLongRunningWorking(now: now)
         let showWorkingControlBar = item.status == .working && isLongRunning
         let supportsFooterHoverActions = item.status != .needsInput && !showWorkingControlBar
         let showFooterHoverActions = supportsFooterHoverActions && isHovered
         let cacheRemaining = item.cacheWarmRemainingSeconds(now: now)
-        let hasTelemetryFooter = item.gitDiff != nil || cacheRemaining != nil || item.contextPercentUsed != nil || supportsFooterHoverActions
-        let hasPreview = !item.terminalPreviewLines.isEmpty || showInlineReply || hasTelemetryFooter
+        let hasTaskProgress = item.taskProgress.map { !$0.isEmpty } ?? false
+        let hasTelemetryFooter = item.gitDiff != nil || cacheRemaining != nil || hasTaskProgress || item.contextPercentUsed != nil || supportsFooterHoverActions
+        let hasPreview = !item.terminalPreviewLines.isEmpty || hasQueuedPrompts || showInlineReply || hasTelemetryFooter
 
         let cardShape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         let isLead = item.status == .needsInput || isLongRunning
+        let footerBottomPadding: CGFloat = 18
+            + (hasQueuedPrompts ? 33 : 0)
+            + (showInlineReply ? (hasQueuedPrompts ? 34 : 27) : 0)
 
         return VStack(alignment: .leading, spacing: 8) {
             agentRowHeader(
@@ -885,6 +899,7 @@ struct AgentMeterPanel: View {
                 miniTerminalPreview(
                     item: item,
                     expanded: isExpanded,
+                    hasQueuedPrompts: hasQueuedPrompts,
                     showInlineReply: showInlineReply,
                     hasTelemetryFooter: hasTelemetryFooter,
                     showFooterHoverActions: showFooterHoverActions,
@@ -907,9 +922,7 @@ struct AgentMeterPanel: View {
         // Full-card tracking region (never shrinks when expanded, so moving mouse down into the prompt never drops hover)
         .overlay {
             PointingHandCursorOverlay(
-                tooltip: model.language == .english
-                    ? "Click to focus \(item.terminalHost.displayName) session"
-                    : "点击跳转到 \(item.terminalHost.displayName) 会话",
+                tooltip: cardHoverTooltip(for: item),
                 onHoverChange: { hovering in
                     if hovering {
                         isKeyboardNavigationActive = false
@@ -930,14 +943,30 @@ struct AgentMeterPanel: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if showInlineReply {
-                inlineTerminalReplyPromptBar(
-                    item: item,
-                    isQuickCompactHovered: isQuickCompactHovered,
-                    isQuickSendHovered: isQuickSendHovered,
-                    familyColor: familyColor,
-                    dark: dark
-                )
+            if hasQueuedPrompts || showInlineReply {
+                VStack(alignment: .leading, spacing: 13) {
+                    if hasQueuedPrompts {
+                        inlineQueuedPromptBar(
+                            item: item,
+                            queuedPrompts: queuedPrompts,
+                            isQueueEditHovered: isQueueEditHovered,
+                            isQueueSendNowHovered: isQueueSendNowHovered,
+                            isQueueRemoveHovered: isQueueRemoveHovered,
+                            familyColor: familyColor,
+                            dark: dark
+                        )
+                        .frame(height: 20)
+                    }
+                    if showInlineReply {
+                        inlineTerminalReplyPromptBar(
+                            item: item,
+                            isQuickSendHovered: isQuickSendHovered,
+                            familyColor: familyColor,
+                            dark: dark
+                        )
+                        .frame(height: 21)
+                    }
+                }
                 .padding(.horizontal, 20)
                 .padding(.bottom, (item.status == .needsInput || showWorkingControlBar) ? 46 : 18)
             }
@@ -970,7 +999,7 @@ struct AgentMeterPanel: View {
                     showInlineReply: showInlineReply
                 )
                 .padding(.trailing, 20)
-                .padding(.bottom, showInlineReply ? 45 : 18)
+                .padding(.bottom, footerBottomPadding)
             }
         }
         .background {
@@ -1007,11 +1036,56 @@ struct AgentMeterPanel: View {
         }
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.16), value: isHighlighted)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: isExpanded)
+        .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: hasQueuedPrompts)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: showInlineReply)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18), value: showWorkingControlBar)
         .animation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.14), value: isCloseHovered)
         .help(item.title)
         .id(item.id)
+    }
+
+    private func cardHoverTooltip(for item: AgentActivityItem) -> String {
+        let en = model.language == .english
+        let base = en
+            ? "Click to focus \(item.terminalHost.displayName) session"
+            : "点击跳转到 \(item.terminalHost.displayName) 会话"
+        guard let progress = item.taskProgress, !progress.isEmpty else {
+            return base
+        }
+        return base + "\n\n" + taskProgressTooltipText(progress: progress, en: en)
+    }
+
+    private func taskProgressTooltipText(progress: AgentTaskProgress, en: Bool) -> String {
+        var headerParts: [String] = []
+        if progress.totalCount > 0 {
+            headerParts.append(
+                en
+                    ? "Tasks \(progress.completedCount)/\(progress.totalCount)"
+                    : "任务进度 \(progress.completedCount)/\(progress.totalCount)"
+            )
+        }
+        if progress.activeSubagentCount > 0 {
+            headerParts.append(
+                en
+                    ? "\(progress.activeSubagentCount) active subagent\(progress.activeSubagentCount > 1 ? "s" : "")"
+                    : "\(progress.activeSubagentCount) 个活跃子任务"
+            )
+        }
+        var lines: [String] = []
+        if !headerParts.isEmpty {
+            lines.append(headerParts.joined(separator: " · "))
+        }
+        for todo in progress.items.prefix(8) {
+            let mark: String = {
+                switch todo.status {
+                case .completed: return "✓"
+                case .inProgress: return "▶"
+                case .pending: return "○"
+                }
+            }()
+            lines.append("\(mark) \(todo.title)")
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func agentRowHeader(
@@ -1024,43 +1098,24 @@ struct AgentMeterPanel: View {
     ) -> some View {
         let en = model.language == .english
         let isLongRunning = item.isLongRunningWorking(now: now)
-        let isWarningBadge = item.status == .needsInput || (item.status == .working && isLongRunning)
-        let amberColor = FlatPalette.amberAlertForeground(dark: dark)
-        let badgeForeground: Color = {
-            if isWarningBadge {
-                return amberColor
-            }
+        let badgeState: AgentVectorBadgeState = {
             switch item.status {
             case .needsInput:
-                return amberColor
+                return .needsInput
             case .working:
-                return FlatPalette.accentText(dark: dark)
+                return isLongRunning ? .stuck : .working
             case .completed:
-                return FlatPalette.softGoodForeground(dark: dark)
+                return .completed
             case .idle:
-                return FlatPalette.inkSecondary(dark: dark)
-            }
-        }()
-        let badgeBackground: Color = {
-            if isWarningBadge {
-                return FlatPalette.amberAlertBackground(dark: dark)
-            }
-            switch item.status {
-            case .needsInput:
-                return FlatPalette.amberAlertBackground(dark: dark)
-            case .working:
-                return FlatPalette.accentSoftBackground(dark: dark)
-            case .completed:
-                return FlatPalette.softGoodBackground(dark: dark)
-            case .idle:
-                return FlatPalette.trackBackground(dark: dark)
+                return .idle
             }
         }()
 
         let statusLabel: String = {
-            switch item.status {
+            switch badgeState {
             case .needsInput: return en ? "Confirm" : "待确认"
             case .working: return en ? "Running" : "运行中"
+            case .stuck: return en ? "Stalled" : "长时卡住"
             case .completed: return en ? "Done" : "已完成"
             case .idle: return en ? "Idle" : "待命"
             }
@@ -1072,6 +1127,15 @@ struct AgentMeterPanel: View {
             let elapsed = max(0, Int(now.timeIntervalSince(item.updatedAt)))
             return formatLiveDuration(elapsed)
         }()
+
+        let badgeTooltip: String = {
+            if let elapsedText {
+                return "\(statusLabel) · \(elapsedText)"
+            }
+            return statusLabel
+        }()
+
+        let phaseSeed = Double(abs(item.id.hashValue % 1000)) / 170.0
 
         return HStack(alignment: .top, spacing: 9) {
             ZStack(alignment: .topTrailing) {
@@ -1092,7 +1156,7 @@ struct AgentMeterPanel: View {
             .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 4) {
-                // Row 1: Title + Status Badge
+                // Row 1: Title + Pure Vector Animated Status Badge
                 HStack(alignment: .center, spacing: 8) {
                     HStack(spacing: 5.5) {
                         if item.isFocusedInHost {
@@ -1110,48 +1174,13 @@ struct AgentMeterPanel: View {
 
                     Spacer(minLength: 6)
 
-                    // Stageshow .ss-badge: semantic tones (warning, accent, success, neutral)
-                    HStack(spacing: 5) {
-                        if item.status == .needsInput {
-                            AgentPulseDot(status: .needsInput, size: 6)
-                        } else if item.status == .working {
-                            if isLongRunning {
-                                Image(systemName: "clock.badge.exclamationmark")
-                                    .font(.system(size: 9.5, weight: .semibold))
-                                    .foregroundStyle(amberColor)
-                            } else {
-                                AgentPulseDot(status: .working, size: 6)
-                            }
-                        } else if item.status == .completed {
-                            Circle()
-                                .fill(FlatPalette.softGoodForeground(dark: dark))
-                                .frame(width: 6, height: 6)
-                        } else {
-                            Circle()
-                                .fill(FlatPalette.inkTertiary(dark: dark).opacity(0.55))
-                                .frame(width: 6, height: 6)
-                        }
-
-                        Text(statusLabel)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(badgeForeground)
-
-                        if let elapsedText {
-                            Text("· \(elapsedText)")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(badgeForeground)
-                                .monospacedDigit()
-                                .contentTransition(.numericText())
-                        }
-                    }
-                    .padding(.leading, 7)
-                    .padding(.trailing, 8)
-                    .frame(height: 20)
-                    .background(
-                        Capsule()
-                            .fill(badgeBackground)
+                    AgentVectorStatusBadge(
+                        state: badgeState,
+                        dark: dark,
+                        phaseOffset: phaseSeed
                     )
-                    .fixedSize(horizontal: true, vertical: false)
+                    .help(badgeTooltip)
+                    .accessibilityLabel(badgeTooltip)
                 }
 
                 // Row 2: Subtitle (100% full width for host, SSH/path, branch + worktree, and workspace conflict badge)
@@ -1343,6 +1372,7 @@ struct AgentMeterPanel: View {
     private func miniTerminalPreview(
         item: AgentActivityItem,
         expanded: Bool,
+        hasQueuedPrompts: Bool,
         showInlineReply: Bool,
         hasTelemetryFooter: Bool,
         showFooterHoverActions: Bool,
@@ -1382,8 +1412,20 @@ struct AgentMeterPanel: View {
                 )
             }
 
-            if showInlineReply {
+            if hasQueuedPrompts {
                 if !lines.isEmpty || hasTelemetryFooter {
+                    Rectangle()
+                        .fill(FlatPalette.faintBorder(dark: dark))
+                        .frame(height: 1)
+                }
+
+                // Reserve space inside the terminal well; the interactive queued prompt overlay sits right on top
+                Color.clear
+                    .frame(height: 20)
+            }
+
+            if showInlineReply {
+                if !lines.isEmpty || hasTelemetryFooter || hasQueuedPrompts {
                     Rectangle()
                         .fill(FlatPalette.faintBorder(dark: dark))
                         .frame(height: 1)
@@ -1411,15 +1453,149 @@ struct AgentMeterPanel: View {
         )
     }
 
+    private func inlineQueuedPromptBar(
+        item: AgentActivityItem,
+        queuedPrompts: [String],
+        isQueueEditHovered: Bool,
+        isQueueSendNowHovered: Bool,
+        isQueueRemoveHovered: Bool,
+        familyColor: Color,
+        dark: Bool
+    ) -> some View {
+        let en = model.language == .english
+        let firstPrompt = queuedPrompts.first ?? ""
+        let extraCount = max(0, queuedPrompts.count - 1)
+        let dangerFg = FlatPalette.dangerInterruptForeground(dark: dark)
+
+        return HStack(alignment: .center, spacing: 6) {
+            HStack(spacing: 3.5) {
+                Image(systemName: "clock")
+                    .font(.system(size: 8.5, weight: .semibold))
+                Text(en ? "Queued" : "已排队")
+                    .font(.system(size: 9.5, weight: .semibold))
+                if extraCount > 0 {
+                    Text("+\(extraCount)")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                }
+            }
+            .foregroundStyle(familyColor)
+            .padding(.horizontal, 5.5)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(familyColor.opacity(dark ? 0.18 : 0.11))
+            )
+            .fixedSize(horizontal: true, vertical: false)
+
+            Text(firstPrompt)
+                .font(.system(size: 11, weight: .regular, design: .monospaced))
+                .foregroundStyle(isQueueEditHovered ? FlatPalette.inkPrimary(dark: dark) : FlatPalette.inkSecondary(dark: dark))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay {
+                    PointingHandCursorOverlay(
+                        tooltip: en
+                            ? "Queued for when session becomes idle (click to edit)"
+                            : "待当前任务完成后自动发送（点击修改）",
+                        onHoverChange: { hovering in
+                            if hovering {
+                                isKeyboardNavigationActive = false
+                            }
+                            hoveredQueueEditID = hovering ? item.id : (hoveredQueueEditID == item.id ? nil : hoveredQueueEditID)
+                        },
+                        onClick: {
+                            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                                if let popped = model.popQueuedPromptForEditing(for: item, at: 0) {
+                                    replyDrafts[item.id] = popped
+                                    expandedReplyAgentID = item.id
+                                    focusedReplyAgentID = item.id
+                                }
+                            }
+                        }
+                    )
+                }
+
+            HStack(spacing: 3) {
+                Text(en ? "Now" : "立即")
+                    .font(.system(size: 9.5, weight: .medium))
+                Text("⏎")
+                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+            }
+            .foregroundStyle(isQueueSendNowHovered ? familyColor : FlatPalette.inkSecondary(dark: dark))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(
+                        isQueueSendNowHovered
+                            ? familyColor.opacity(dark ? 0.22 : 0.13)
+                            : (dark ? Color.white.opacity(0.06) : Color.black.opacity(0.045))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
+                    )
+            )
+            .overlay {
+                PointingHandCursorOverlay(
+                    tooltip: en ? "Send queued prompt immediately" : "立即发送排队中的指令",
+                    onHoverChange: { hovering in
+                        if hovering {
+                            isKeyboardNavigationActive = false
+                        }
+                        hoveredQueueSendNowID = hovering ? item.id : (hoveredQueueSendNowID == item.id ? nil : hoveredQueueSendNowID)
+                    },
+                    onClick: {
+                        withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                            hoveredQueueSendNowID = nil
+                            model.dispatchNextQueuedPromptNow(item)
+                        }
+                    }
+                )
+            }
+
+            Image(systemName: "xmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(isQueueRemoveHovered ? dangerFg : FlatPalette.inkSecondary(dark: dark))
+                .frame(width: 17, height: 17)
+                .background(
+                    Circle()
+                        .fill(
+                            isQueueRemoveHovered
+                                ? FlatPalette.dangerInterruptBackground(dark: dark, hovered: true)
+                                : (dark ? Color.white.opacity(0.06) : Color.black.opacity(0.045))
+                        )
+                )
+                .overlay {
+                    PointingHandCursorOverlay(
+                        tooltip: en ? "Cancel queued prompt" : "取消该条排队指令",
+                        onHoverChange: { hovering in
+                            if hovering {
+                                isKeyboardNavigationActive = false
+                            }
+                            hoveredQueueRemoveID = hovering ? item.id : (hoveredQueueRemoveID == item.id ? nil : hoveredQueueRemoveID)
+                        },
+                        onClick: {
+                            withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
+                                hoveredQueueRemoveID = nil
+                                model.removeQueuedPrompt(for: item, at: 0)
+                            }
+                        }
+                    )
+                }
+        }
+    }
+
     private func inlineTerminalReplyPromptBar(
         item: AgentActivityItem,
-        isQuickCompactHovered: Bool,
         isQuickSendHovered: Bool,
         familyColor: Color,
         dark: Bool
     ) -> some View {
         let en = model.language == .english
         let hostName = item.terminalHost.displayName
+        let isQueueMode = item.status == .working
         let draftBinding = Binding<String>(
             get: { replyDrafts[item.id] ?? "" },
             set: { replyDrafts[item.id] = $0 }
@@ -1428,8 +1604,8 @@ struct AgentMeterPanel: View {
         let hasText = !currentDraft.isEmpty
 
         return HStack(alignment: .center, spacing: 6) {
-            Text("❯")
-                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+            Text(isQueueMode ? "⏳" : "❯")
+                .font(.system(size: isQueueMode ? 10 : 10.5, weight: .bold, design: .monospaced))
                 .foregroundStyle(familyColor)
                 .overlay {
                     PointingHandCursorOverlay(
@@ -1447,7 +1623,9 @@ struct AgentMeterPanel: View {
 
             InlinePromptTextField(
                 text: draftBinding,
-                placeholder: en ? "Reply to \(hostName)… (press /)" : "发送指令至 \(hostName)…（按 / 聚焦）",
+                placeholder: isQueueMode
+                    ? (en ? "Queue next prompt for \(hostName)… (auto-sends when idle)" : "排队下一条指令至 \(hostName)…（空闲时自动发送）")
+                    : (en ? "Reply to \(hostName)… (press /)" : "发送指令至 \(hostName)…（按 / 聚焦）"),
                 dark: dark,
                 requestFocus: focusedReplyAgentID == item.id,
                 onHoverChange: { hovering in
@@ -1470,47 +1648,13 @@ struct AgentMeterPanel: View {
             .frame(maxWidth: .infinity)
             .frame(height: 20)
 
-            if item.family == .claude || item.family == .codex {
-                Text("/compact")
-                    .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(isQuickCompactHovered ? familyColor : FlatPalette.inkSecondary(dark: dark))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2.5)
-                    .background(
-                        Capsule()
-                            .fill(
-                                isQuickCompactHovered
-                                    ? familyColor.opacity(dark ? 0.20 : 0.12)
-                                    : (dark ? Color.white.opacity(0.06) : Color.black.opacity(0.045))
-                            )
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(FlatPalette.hairlineBorder(dark: dark), lineWidth: 1)
-                            )
-                    )
-                    .overlay {
-                        PointingHandCursorOverlay(
-                            tooltip: en ? "Send /compact to compact context window" : "发送 /compact 压缩上下文窗口",
-                            onHoverChange: { hovering in
-                                if hovering {
-                                    isKeyboardNavigationActive = false
-                                }
-                                hoveredQuickCompactID = hovering ? item.id : (hoveredQuickCompactID == item.id ? nil : hoveredQuickCompactID)
-                            },
-                            onClick: {
-                                withAnimation(FlatMotion.snappy(reduceMotion: reduceMotion, duration: 0.18)) {
-                                    expandedReplyAgentID = nil
-                                    focusedReplyAgentID = nil
-                                    model.sendQuickReply(item, text: "/compact")
-                                }
-                            }
-                        )
-                    }
-            }
-
             HStack(spacing: 3) {
-                Text(en ? "Send" : "发送")
-                    .font(.system(size: 9.5, weight: .semibold))
+                Text(
+                    isQueueMode
+                        ? (en ? "Queue" : "排队")
+                        : (en ? "Send" : "发送")
+                )
+                .font(.system(size: 9.5, weight: .semibold))
                 Text("⏎")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
             }
@@ -1536,7 +1680,9 @@ struct AgentMeterPanel: View {
             )
             .overlay {
                 PointingHandCursorOverlay(
-                    tooltip: en ? "Send message to \(hostName) session (Enter)" : "发送指令至 \(hostName) 会话（回车）",
+                    tooltip: isQueueMode
+                        ? (en ? "Queue prompt to auto-send when session finishes current turn (Enter)" : "加入队列，待当前轮次完成后自动发送（回车）")
+                        : (en ? "Send message to \(hostName) session (Enter)" : "发送指令至 \(hostName) 会话（回车）"),
                     onHoverChange: { hovering in
                         if hovering {
                             isKeyboardNavigationActive = false
@@ -1562,7 +1708,7 @@ struct AgentMeterPanel: View {
             replyDrafts[item.id] = nil
             expandedReplyAgentID = nil
             focusedReplyAgentID = nil
-            model.sendQuickReply(item, text: text)
+            model.submitOrQueueReply(item, text: text)
         }
     }
 
@@ -1614,6 +1760,7 @@ struct AgentMeterPanel: View {
         dark: Bool
     ) -> some View {
         let en = model.language == .english
+        let activeProgress = (item.taskProgress?.isEmpty == false) ? item.taskProgress : nil
 
         return HStack(alignment: .center, spacing: 6) {
             if let diff = item.gitDiff {
@@ -1626,18 +1773,27 @@ struct AgentMeterPanel: View {
                 .fixedSize(horizontal: true, vertical: false)
             }
 
-            if item.gitDiff != nil && cacheRemaining != nil {
-                Text("·")
-                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
-                    .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
+            if let progress = activeProgress {
+                if item.gitDiff != nil {
+                    Text("·")
+                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                        .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
+                }
+                benchoTaskProgressChip(progress: progress, familyColor: familyColor, dark: dark)
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             if let cacheRemaining {
+                if item.gitDiff != nil || activeProgress != nil {
+                    Text("·")
+                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                        .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
+                }
                 benchoCacheWarmChip(remainingSeconds: cacheRemaining, dark: dark)
                     .fixedSize(horizontal: true, vertical: false)
             }
 
-            if item.gitDiff == nil && cacheRemaining == nil {
+            if item.gitDiff == nil && activeProgress == nil && cacheRemaining == nil {
                 Text(item.terminalHost.displayName)
                     .font(.system(size: 10.5, weight: .regular, design: .monospaced))
                     .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
@@ -1720,7 +1876,7 @@ struct AgentMeterPanel: View {
                     .foregroundStyle(FlatPalette.inkSecondary(dark: dark))
                 Text(
                     item.status == .working
-                        ? (en ? "Reply" : "回复")
+                        ? (en ? "Queue" : "排队")
                         : (en ? "Reply" : "快捷回复")
                 )
                 .font(.system(size: 10.5, weight: .medium))
@@ -1738,7 +1894,9 @@ struct AgentMeterPanel: View {
             )
             .overlay {
                 PointingHandCursorOverlay(
-                    tooltip: en ? "Type a custom reply to \(item.terminalHost.displayName)" : "输入自定义回复发送至 \(item.terminalHost.displayName)",
+                    tooltip: item.status == .working
+                        ? (en ? "Queue next instruction to auto-send when session finishes" : "预置下一条指令，待当前任务完成后自动发送")
+                        : (en ? "Type a custom reply to \(item.terminalHost.displayName)" : "输入自定义回复发送至 \(item.terminalHost.displayName)"),
                     onHoverChange: { hovering in
                         if hovering {
                             isKeyboardNavigationActive = false
@@ -1759,6 +1917,48 @@ struct AgentMeterPanel: View {
                 )
             }
         }
+    }
+
+    private func benchoTaskProgressChip(progress: AgentTaskProgress, familyColor: Color, dark: Bool) -> some View {
+        let en = model.language == .english
+        let isDone = progress.isAllCompleted
+        let accentColor: Color = isDone
+            ? FlatPalette.softGoodForeground(dark: dark)
+            : familyColor
+        let textColor = isDone
+            ? FlatPalette.softGoodForeground(dark: dark)
+            : FlatPalette.inkSecondary(dark: dark)
+
+        return HStack(spacing: 3.5) {
+            if progress.totalCount > 0 {
+                Text(isDone ? "✓" : "☑")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(accentColor)
+
+                Text(en ? "Tasks" : "任务")
+                    .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                    .foregroundStyle(textColor)
+
+                Text("\(progress.completedCount)/\(progress.totalCount)")
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(isDone ? accentColor : FlatPalette.inkPrimary(dark: dark))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+            }
+
+            if progress.activeSubagentCount > 0 {
+                if progress.totalCount > 0 {
+                    Text("·")
+                        .font(.system(size: 10.5, weight: .regular, design: .monospaced))
+                        .foregroundStyle(FlatPalette.inkTertiary(dark: dark))
+                }
+                Text("⑂\(progress.activeSubagentCount)")
+                    .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                    .foregroundStyle(familyColor)
+                    .monospacedDigit()
+            }
+        }
+        .help(taskProgressTooltipText(progress: progress, en: en))
     }
 
     private func benchoGitDiffChip(diff: GitDiffSummary, dark: Bool) -> some View {
@@ -1878,13 +2078,13 @@ struct AgentMeterPanel: View {
     ) -> some View {
         let en = model.language == .english
         let hostName = item.terminalHost.displayName
-        let amber = FlatPalette.amberAlertForeground(dark: dark)
-        let labelColor = isLongRunning ? amber : FlatPalette.inkSecondary(dark: dark)
+        let dangerRed = FlatPalette.dangerInterruptForeground(dark: dark)
+        let labelColor = isLongRunning ? dangerRed : FlatPalette.inkSecondary(dark: dark)
         return HStack(spacing: 5.5) {
             if isLongRunning {
                 Image(systemName: "clock.badge.exclamationmark")
                     .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(amber)
+                    .foregroundStyle(dangerRed)
             }
             Text(
                 isLongRunning
@@ -2180,7 +2380,10 @@ struct AgentMeterPanel: View {
         if isSelected {
             return familyColor.opacity(dark ? 0.56 : 0.48)
         }
-        if isLead || item.status == .needsInput || (item.status == .working && item.isLongRunningWorking()) {
+        if item.status == .working && item.isLongRunningWorking() {
+            return Color(red: 239.0 / 255, green: 68.0 / 255, blue: 68.0 / 255).opacity(0.30)
+        }
+        if isLead || item.status == .needsInput {
             return Color(red: 245.0 / 255, green: 158.0 / 255, blue: 11.0 / 255).opacity(0.28)
         }
         return FlatPalette.hairlineBorder(dark: dark)
@@ -3651,56 +3854,262 @@ private struct AgentMeterSettings: View {
     }
 }
 
-private struct AgentPulseDot: View {
-    let status: AgentTaskStatus
-    var size: CGFloat = 6
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulsing = false
+private enum AgentVectorBadgeState: Equatable {
+    case working
+    case needsInput
+    case completed
+    case stuck
+    case idle
+}
 
-    private var dotColor: Color {
-        let dark = colorScheme == .dark
-        switch status {
-        case .needsInput:
-            return FlatPalette.amberAlertForeground(dark: dark)
-        case .working:
-            return FlatPalette.accentText(dark: dark)
-        case .completed:
-            return FlatPalette.softGoodForeground(dark: dark)
-        case .idle:
-            return FlatPalette.inkTertiary(dark: dark)
+private struct AgentVectorStatusBadge: View {
+    let state: AgentVectorBadgeState
+    let dark: Bool
+    var phaseOffset: Double = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct BadgePalette {
+        let primaryColor: Color
+        let secondaryColor: Color
+        let bgTint: Color
+        let sideGlow: Color
+        let borderColor: Color
+    }
+
+    private var palette: BadgePalette {
+        switch (state, dark) {
+        case (.working, true):
+            return BadgePalette(
+                primaryColor: Color(red: 96.0 / 255, green: 165.0 / 255, blue: 250.0 / 255),
+                secondaryColor: Color(red: 147.0 / 255, green: 197.0 / 255, blue: 253.0 / 255),
+                bgTint: Color(red: 16.0 / 255, green: 25.0 / 255, blue: 41.0 / 255),
+                sideGlow: Color(red: 59.0 / 255, green: 130.0 / 255, blue: 246.0 / 255).opacity(0.20),
+                borderColor: Color(red: 96.0 / 255, green: 165.0 / 255, blue: 250.0 / 255).opacity(0.48)
+            )
+        case (.working, false):
+            return BadgePalette(
+                primaryColor: Color(red: 37.0 / 255, green: 99.0 / 255, blue: 235.0 / 255),
+                secondaryColor: Color(red: 59.0 / 255, green: 130.0 / 255, blue: 246.0 / 255),
+                bgTint: Color(red: 239.0 / 255, green: 246.0 / 255, blue: 255.0 / 255),
+                sideGlow: Color(red: 59.0 / 255, green: 130.0 / 255, blue: 246.0 / 255).opacity(0.12),
+                borderColor: Color(red: 37.0 / 255, green: 99.0 / 255, blue: 235.0 / 255).opacity(0.32)
+            )
+        case (.needsInput, true):
+            return BadgePalette(
+                primaryColor: Color(red: 253.0 / 255, green: 230.0 / 255, blue: 138.0 / 255),
+                secondaryColor: Color(red: 251.0 / 255, green: 191.0 / 255, blue: 36.0 / 255),
+                bgTint: Color(red: 33.0 / 255, green: 24.0 / 255, blue: 9.0 / 255),
+                sideGlow: Color(red: 245.0 / 255, green: 158.0 / 255, blue: 11.0 / 255).opacity(0.24),
+                borderColor: Color(red: 251.0 / 255, green: 191.0 / 255, blue: 36.0 / 255).opacity(0.62)
+            )
+        case (.needsInput, false):
+            return BadgePalette(
+                primaryColor: Color(red: 180.0 / 255, green: 83.0 / 255, blue: 9.0 / 255),
+                secondaryColor: Color(red: 217.0 / 255, green: 119.0 / 255, blue: 6.0 / 255),
+                bgTint: Color(red: 255.0 / 255, green: 251.0 / 255, blue: 235.0 / 255),
+                sideGlow: Color(red: 245.0 / 255, green: 158.0 / 255, blue: 11.0 / 255).opacity(0.15),
+                borderColor: Color(red: 217.0 / 255, green: 119.0 / 255, blue: 6.0 / 255).opacity(0.40)
+            )
+        case (.completed, true):
+            return BadgePalette(
+                primaryColor: Color(red: 74.0 / 255, green: 222.0 / 255, blue: 128.0 / 255),
+                secondaryColor: Color(red: 134.0 / 255, green: 239.0 / 255, blue: 172.0 / 255),
+                bgTint: Color(red: 11.0 / 255, green: 30.0 / 255, blue: 22.0 / 255),
+                sideGlow: Color(red: 16.0 / 255, green: 185.0 / 255, blue: 129.0 / 255).opacity(0.22),
+                borderColor: Color(red: 74.0 / 255, green: 222.0 / 255, blue: 128.0 / 255).opacity(0.50)
+            )
+        case (.completed, false):
+            return BadgePalette(
+                primaryColor: Color(red: 5.0 / 255, green: 150.0 / 255, blue: 105.0 / 255),
+                secondaryColor: Color(red: 16.0 / 255, green: 185.0 / 255, blue: 129.0 / 255),
+                bgTint: Color(red: 236.0 / 255, green: 253.0 / 255, blue: 245.0 / 255),
+                sideGlow: Color(red: 16.0 / 255, green: 185.0 / 255, blue: 129.0 / 255).opacity(0.12),
+                borderColor: Color(red: 5.0 / 255, green: 150.0 / 255, blue: 105.0 / 255).opacity(0.34)
+            )
+        case (.stuck, true):
+            return BadgePalette(
+                primaryColor: Color(red: 248.0 / 255, green: 113.0 / 255, blue: 113.0 / 255),
+                secondaryColor: Color(red: 239.0 / 255, green: 68.0 / 255, blue: 68.0 / 255),
+                bgTint: Color(red: 34.0 / 255, green: 13.0 / 255, blue: 16.0 / 255),
+                sideGlow: Color(red: 239.0 / 255, green: 68.0 / 255, blue: 68.0 / 255).opacity(0.24),
+                borderColor: Color(red: 248.0 / 255, green: 113.0 / 255, blue: 113.0 / 255).opacity(0.58)
+            )
+        case (.stuck, false):
+            return BadgePalette(
+                primaryColor: Color(red: 220.0 / 255, green: 38.0 / 255, blue: 38.0 / 255),
+                secondaryColor: Color(red: 239.0 / 255, green: 68.0 / 255, blue: 68.0 / 255),
+                bgTint: Color(red: 254.0 / 255, green: 242.0 / 255, blue: 242.0 / 255),
+                sideGlow: Color(red: 239.0 / 255, green: 68.0 / 255, blue: 68.0 / 255).opacity(0.14),
+                borderColor: Color(red: 220.0 / 255, green: 38.0 / 255, blue: 38.0 / 255).opacity(0.38)
+            )
+        case (.idle, true):
+            return BadgePalette(
+                primaryColor: Color(red: 148.0 / 255, green: 163.0 / 255, blue: 184.0 / 255),
+                secondaryColor: Color(red: 203.0 / 255, green: 213.0 / 255, blue: 225.0 / 255),
+                bgTint: Color(red: 20.0 / 255, green: 23.0 / 255, blue: 32.0 / 255),
+                sideGlow: Color(red: 148.0 / 255, green: 163.0 / 255, blue: 184.0 / 255).opacity(0.08),
+                borderColor: Color.white.opacity(0.14)
+            )
+        case (.idle, false):
+            return BadgePalette(
+                primaryColor: Color(red: 100.0 / 255, green: 116.0 / 255, blue: 139.0 / 255),
+                secondaryColor: Color(red: 71.0 / 255, green: 85.0 / 255, blue: 105.0 / 255),
+                bgTint: Color(red: 241.0 / 255, green: 245.0 / 255, blue: 249.0 / 255),
+                sideGlow: Color(red: 100.0 / 255, green: 116.0 / 255, blue: 139.0 / 255).opacity(0.06),
+                borderColor: Color(red: 15.0 / 255, green: 23.0 / 255, blue: 42.0 / 255).opacity(0.13)
+            )
         }
     }
 
     var body: some View {
-        let activePulse = (status == .working || status == .needsInput) && !reduceMotion && pulsing
-        Circle()
-            .fill(dotColor)
-            .frame(width: size, height: size)
-            .scaleEffect(activePulse ? 1.25 : 1.0)
-            .opacity(activePulse ? 0.6 : 1.0)
-            .onAppear {
-                updateAnimation(for: status)
-            }
-            .onChange(of: status) { _, newValue in
-                updateAnimation(for: newValue)
-            }
-    }
+        let shape = RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+        let p = palette
 
-    private func updateAnimation(for currentStatus: AgentTaskStatus) {
-        guard !reduceMotion else {
-            pulsing = false
-            return
-        }
-        if currentStatus == .working || currentStatus == .needsInput {
-            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                pulsing = true
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
+            let t = reduceMotion ? 0.0 : (context.date.timeIntervalSinceReferenceDate + phaseOffset)
+
+            Canvas { ctx, size in
+                let w = size.width
+                let h = size.height
+                let cx = w / 2.0
+                let cy = h / 2.0
+
+                // 1. Theme-aware background fill
+                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(p.bgTint))
+
+                // 2. Subtle ambient side glow gradients
+                let glowRadius = w * 0.58
+                ctx.fill(
+                    Path(CGRect(origin: .zero, size: size)),
+                    with: .radialGradient(
+                        Gradient(colors: [p.sideGlow, .clear]),
+                        center: CGPoint(x: 0, y: cy),
+                        startRadius: 0.5,
+                        endRadius: glowRadius
+                    )
+                )
+                ctx.fill(
+                    Path(CGRect(origin: .zero, size: size)),
+                    with: .radialGradient(
+                        Gradient(colors: [p.sideGlow, .clear]),
+                        center: CGPoint(x: w, y: cy),
+                        startRadius: 0.5,
+                        endRadius: glowRadius
+                    )
+                )
+
+                // 3. Smooth vector expression glyph
+                switch state {
+                case .working:
+                    let lookX = sin(t * 2.6) * 2.5
+                    let lookY = cos(t * 1.3) * 0.35
+                    let blinkCycle = (t * 0.85).truncatingRemainder(dividingBy: 1.0)
+                    let blinkScaleY: Double = (blinkCycle > 0.90)
+                        ? max(0.12, abs((blinkCycle - 0.95) * 20.0))
+                        : 1.0
+
+                    let eyeW: CGFloat = 3.1
+                    let eyeH: CGFloat = CGFloat(5.2 * blinkScaleY)
+                    let gap: CGFloat = 3.3
+                    let corner = min(1.4, eyeH / 2.0)
+
+                    for offsetX in [-gap, gap] {
+                        let ex = cx + offsetX + CGFloat(lookX) - eyeW / 2.0
+                        let ey = cy + CGFloat(lookY) - eyeH / 2.0
+                        let rect = CGRect(x: ex, y: ey, width: eyeW, height: eyeH)
+                        let path = Path(roundedRect: rect, cornerRadius: corner, style: .continuous)
+                        ctx.fill(path, with: .color(p.primaryColor))
+                    }
+
+                case .completed:
+                    let happyPhase = sin(t * 1.6)
+                    let gap: CGFloat = 3.4
+                    if happyPhase > -0.45 {
+                        var arcPath = Path()
+                        for offsetX in [-gap, gap] {
+                            let center = CGPoint(x: cx + offsetX, y: cy + 1.2)
+                            arcPath.addArc(
+                                center: center,
+                                radius: 2.3,
+                                startAngle: .radians(Double.pi * 1.15),
+                                endAngle: .radians(Double.pi * 1.85),
+                                clockwise: false
+                            )
+                        }
+                        ctx.stroke(
+                            arcPath,
+                            with: .color(p.primaryColor),
+                            style: StrokeStyle(lineWidth: 1.85, lineCap: .round, lineJoin: .round)
+                        )
+                    } else {
+                        let eyeW: CGFloat = 3.0
+                        let eyeH: CGFloat = 4.6
+                        for offsetX in [-gap, gap] {
+                            let rect = CGRect(
+                                x: cx + offsetX - eyeW / 2.0,
+                                y: cy - eyeH / 2.0,
+                                width: eyeW,
+                                height: eyeH
+                            )
+                            let path = Path(roundedRect: rect, cornerRadius: 1.3, style: .continuous)
+                            ctx.fill(path, with: .color(p.primaryColor))
+                        }
+                    }
+
+                case .stuck:
+                    let jitterX = CGFloat(sin(t * 18.0) * 0.35)
+                    let pulse = 0.72 + 0.28 * sin(t * 5.0)
+                    let gap: CGFloat = 3.6
+                    let r: CGFloat = 2.05
+                    var xPath = Path()
+                    for offsetX in [-gap, gap] {
+                        let ox = cx + offsetX + jitterX
+                        xPath.move(to: CGPoint(x: ox - r, y: cy - r))
+                        xPath.addLine(to: CGPoint(x: ox + r, y: cy + r))
+                        xPath.move(to: CGPoint(x: ox + r, y: cy - r))
+                        xPath.addLine(to: CGPoint(x: ox - r, y: cy + r))
+                    }
+                    ctx.stroke(
+                        xPath,
+                        with: .color(p.primaryColor.opacity(pulse)),
+                        style: StrokeStyle(lineWidth: 1.85, lineCap: .round, lineJoin: .round)
+                    )
+
+                case .needsInput, .idle:
+                    let isFast = (state == .needsInput)
+                    let chevronX = cx - 3.8
+                    var chevPath = Path()
+                    chevPath.move(to: CGPoint(x: chevronX - 1.5, y: cy - 2.7))
+                    chevPath.addLine(to: CGPoint(x: chevronX + 1.4, y: cy))
+                    chevPath.addLine(to: CGPoint(x: chevronX - 1.5, y: cy + 2.7))
+                    ctx.stroke(
+                        chevPath,
+                        with: .color(p.primaryColor),
+                        style: StrokeStyle(lineWidth: 1.85, lineCap: .round, lineJoin: .round)
+                    )
+
+                    let cursorAlpha: Double = isFast
+                        ? (0.20 + 0.80 * (0.5 + 0.5 * sin(t * 9.5)))
+                        : (0.18 + 0.72 * (0.5 + 0.5 * sin(t * 2.2)))
+                    var underPath = Path()
+                    underPath.move(to: CGPoint(x: cx + 0.8, y: cy + 2.6))
+                    underPath.addLine(to: CGPoint(x: cx + 5.0, y: cy + 2.6))
+                    ctx.stroke(
+                        underPath,
+                        with: .color(p.secondaryColor.opacity(cursorAlpha)),
+                        style: StrokeStyle(lineWidth: 1.85, lineCap: .round)
+                    )
+                }
             }
-        } else {
-            withAnimation(.easeOut(duration: 0.2)) {
-                pulsing = false
-            }
         }
+        .frame(width: 34, height: 20)
+        .clipShape(shape)
+        .overlay(
+            shape
+                .strokeBorder(p.borderColor, lineWidth: 1.2)
+        )
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 

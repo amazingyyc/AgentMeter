@@ -18,6 +18,7 @@ final class AgentMeterModel {
     var historicalSessions: [AgentHistorySessionItem] = []
     var recentLaunchWorkspaces: [LaunchWorkspaceItem] = []
     var customLaunchCommands: [String: String] = [:]
+    var promptQueues: [String: [String]] = [:]
     var preferredLaunchFamily: AgentFamily {
         didSet {
             UserDefaults.standard.set(preferredLaunchFamily.rawValue, forKey: "preferredLaunchFamily")
@@ -69,6 +70,9 @@ final class AgentMeterModel {
     @ObservationIgnored private var started = false
     @ObservationIgnored private var agentTimerTask: Task<Void, Never>?
     @ObservationIgnored private var activeSound: NSSound?
+    @ObservationIgnored private var pausedQueueKeys: Set<String> = []
+    @ObservationIgnored private var dispatchingQueueKeys: Set<String> = []
+    @ObservationIgnored private var hasSeededDemoQueue = false
     @ObservationIgnored var onGlobalHotkeysPreferenceChanged: (@MainActor (Bool) -> Void)?
 
     init() {
@@ -299,9 +303,82 @@ final class AgentMeterModel {
         }
     }
 
+    func queueKey(for item: AgentActivityItem) -> String {
+        if let sid = item.sessionID, !sid.isEmpty {
+            return "sid:\(sid)"
+        }
+        return "id:\(item.id)"
+    }
+
+    func queuedPrompts(for item: AgentActivityItem) -> [String] {
+        promptQueues[queueKey(for: item)] ?? []
+    }
+
+    func enqueuePrompt(_ item: AgentActivityItem, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let key = queueKey(for: item)
+        pausedQueueKeys.remove(key)
+        var current = promptQueues[key] ?? []
+        current.append(trimmed)
+        promptQueues[key] = current
+    }
+
+    func submitOrQueueReply(_ item: AgentActivityItem, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if item.status == .working {
+            enqueuePrompt(item, text: trimmed)
+        } else {
+            pausedQueueKeys.remove(queueKey(for: item))
+            sendQuickReply(item, text: trimmed)
+        }
+    }
+
+    func removeQueuedPrompt(for item: AgentActivityItem, at index: Int) {
+        let key = queueKey(for: item)
+        guard var current = promptQueues[key], current.indices.contains(index) else { return }
+        current.remove(at: index)
+        if current.isEmpty {
+            promptQueues.removeValue(forKey: key)
+            pausedQueueKeys.remove(key)
+        } else {
+            promptQueues[key] = current
+        }
+    }
+
+    func popQueuedPromptForEditing(for item: AgentActivityItem, at index: Int = 0) -> String? {
+        let key = queueKey(for: item)
+        guard var current = promptQueues[key], current.indices.contains(index) else { return nil }
+        let popped = current.remove(at: index)
+        if current.isEmpty {
+            promptQueues.removeValue(forKey: key)
+            pausedQueueKeys.remove(key)
+        } else {
+            promptQueues[key] = current
+        }
+        return popped
+    }
+
+    func dispatchNextQueuedPromptNow(_ item: AgentActivityItem) {
+        let key = queueKey(for: item)
+        guard var current = promptQueues[key], !current.isEmpty else { return }
+        let next = current.removeFirst()
+        if current.isEmpty {
+            promptQueues.removeValue(forKey: key)
+        } else {
+            promptQueues[key] = current
+        }
+        pausedQueueKeys.remove(key)
+        sendQuickReply(item, text: next)
+    }
+
     func sendQuickReply(_ item: AgentActivityItem, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let key = queueKey(for: item)
+        pausedQueueKeys.remove(key)
+        dispatchingQueueKeys.insert(key)
         let previousActivities = agentActivities
         let previousUnseenCompletion = hasUnseenMenuBarCompletion
         let en = language == .english
@@ -316,6 +393,7 @@ final class AgentMeterModel {
             hasUnseenMenuBarCompletion = false
         }
         Task { @MainActor in
+            defer { dispatchingQueueKeys.remove(key) }
             let ok = await agentTracker.sendInlinePrompt(item, text: trimmed)
             if !isDemo {
                 if !ok {
@@ -331,6 +409,8 @@ final class AgentMeterModel {
     }
 
     func interruptAgentSession(_ item: AgentActivityItem) {
+        let key = queueKey(for: item)
+        pausedQueueKeys.insert(key)
         let previousActivities = agentActivities
         let previousUnseenCompletion = hasUnseenMenuBarCompletion
         let en = language == .english
@@ -360,6 +440,9 @@ final class AgentMeterModel {
     }
 
     func closeAgentSession(_ item: AgentActivityItem) {
+        let key = queueKey(for: item)
+        promptQueues.removeValue(forKey: key)
+        pausedQueueKeys.remove(key)
         let previousActivities = agentActivities
         let previousUnseenCompletion = hasUnseenMenuBarCompletion
         agentActivities.removeAll { $0.id == item.id }
@@ -556,6 +639,13 @@ final class AgentMeterModel {
     private func pollAgents() async {
         let result = await agentTracker.poll(isDemo: isDemo)
         agentActivities = result.items
+        if isDemo, !hasSeededDemoQueue, let demoCodex = result.items.first(where: { $0.id == "demo-codex" }) {
+            hasSeededDemoQueue = true
+            let en = language == .english
+            promptQueues[queueKey(for: demoCodex)] = [
+                en ? "Run cargo test --release and commit benchmark results" : "运行 cargo test --release 并提交基准测试结果"
+            ]
+        }
         if recentLaunchWorkspaces.isEmpty {
             recentLaunchWorkspaces = agentTracker.discoverLaunchWorkspaceItems(liveItems: result.items)
         }
@@ -580,6 +670,26 @@ final class AgentMeterModel {
         }
         if !agentActivities.contains(where: { $0.isUnreadCompletion }) {
             hasUnseenMenuBarCompletion = false
+        }
+        flushReadyPromptQueues()
+    }
+
+    private func flushReadyPromptQueues() {
+        guard !isDemo, !promptQueues.isEmpty else { return }
+        for item in agentActivities {
+            guard item.status == .completed || item.status == .idle else { continue }
+            let key = queueKey(for: item)
+            guard !pausedQueueKeys.contains(key),
+                  !dispatchingQueueKeys.contains(key),
+                  var queued = promptQueues[key],
+                  !queued.isEmpty else { continue }
+            let nextPrompt = queued.removeFirst()
+            if queued.isEmpty {
+                promptQueues.removeValue(forKey: key)
+            } else {
+                promptQueues[key] = queued
+            }
+            sendQuickReply(item, text: nextPrompt)
         }
     }
 }
