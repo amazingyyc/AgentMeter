@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AgentMeter · 无打断感知 UI Review V2（统一徽章菜单栏 &amp; 紧凑型待确认迷你卡片）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #090a0f;
+    --bg-elevated: #11131a;
+    --bg-panel: #111113;
+    --bg-card: #1a1a1d;
+    --bg-card-hover: #212125;
+    --bg-raised: #26262a;
+    --bg-raised-hover: #313134;
+    --bg-well: #141417;
+    --bg-track: rgba(255, 255, 255, 0.07);
+    --fg: #ececee;
+    --fg-secondary: #9d9da1;
+    --fg-tertiary: #6c6c70;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-faint: rgba(255, 255, 255, 0.05);
+    --accent: #3b82f6;
+    --accent-text: #93c5fd;
+    --amber: #fbbf24;
+    --amber-bg: rgba(245, 158, 11, 0.18);
+    --emerald: #4ade80;
+    --emerald-bg: rgba(34, 197, 94, 0.16);
+    --emerald-bg-hover: rgba(34, 197, 94, 0.24);
+    --danger: #f87171;
+    --danger-bg: rgba(239, 68, 68, 0.16);
+    --sigil: #6ee7a8;
+    --term-path: #6f8ccf;
+    --menubar-bg: rgba(22, 22, 26, 0.90);
+    --hud-shadow: 0 18px 40px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.38);
+    --font-sans: 'Instrument Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+
+  :root[data-theme="light"] {
+    --bg: #eef1f6;
+    --bg-elevated: #ffffff;
+    --bg-panel: #f9f9fb;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f9f9fb;
+    --bg-raised: #ffffff;
+    --bg-raised-hover: #e8e8ec;
+    --bg-well: #f0f0f3;
+    --bg-track: #e8e8ec;
+    --fg: #1c2024;
+    --fg-secondary: #60646c;
+    --fg-tertiary: #8b8d98;
+    --border: #e8e8ec;
+    --border-faint: #f0f0f3;
+    --accent: #3e63dd;
+    --accent-text: #3358d4;
+    --amber: #b45309;
+    --amber-bg: rgba(245, 158, 11, 0.14);
+    --emerald: #15803d;
+    --emerald-bg: rgba(34, 197, 94, 0.12);
+    --emerald-bg-hover: rgba(34, 197, 94, 0.18);
+    --danger: #b91c1c;
+    --danger-bg: rgba(239, 68, 68, 0.10);
+    --sigil: #15803d;
+    --term-path: #4b6cb7;
+    --menubar-bg: rgba(246, 247, 250, 0.92);
+    --hud-shadow: 0 16px 36px rgba(15, 23, 42, 0.14), 0 2px 8px rgba(15, 23, 42, 0.06);
+    color-scheme: light;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 44px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .workbench {
+    max-width: 1120px;
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .top-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+
+  .top-bar h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .top-bar p {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+    color: var(--fg-secondary);
+  }
+
+  .controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .segmented-group {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-track);
+    padding: 3px;
+    border-radius: 9px;
+    border: 1px solid var(--border-faint);
+    gap: 2px;
+  }
+
+  .seg-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg-tertiary);
+    padding-inline: 8px 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .seg-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--fg-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.16s ease;
+    white-space: nowrap;
+  }
+
+  .seg-btn:hover {
+    color: var(--fg);
+  }
+
+  .seg-btn.active {
+    background: var(--bg-card);
+    color: var(--fg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Scenario Switcher */
+  .scenario-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .scenario-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .scene-btn {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--fg-secondary);
+    font-family: var(--font-sans);
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 6px 13px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    transition: all 0.15s ease;
+  }
+
+  .scene-btn:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+
+  .scene-btn.active {
+    background: rgba(59, 130, 246, 0.14);
+    border-color: var(--accent);
+    color: var(--fg);
+  }
+
+  .scene-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  /* Simulated macOS Desktop + Menu Bar */
+  .macos-screen {
+    position: relative;
+    height: 360px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background: radial-gradient(circle at 18% 15%, rgba(59, 130, 246, 0.10), transparent 52%),
+                radial-gradient(circle at 82% 10%, rgba(245, 158, 11, 0.08), transparent 48%),
+                var(--bg-well);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .macos-menubar {
+    height: 32px;
+    background: var(--menubar-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: 16px;
+    font-size: 12.5px;
+    font-weight: 500;
+    z-index: 20;
+    user-select: none;
+  }
+
+  .menubar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .apple-logo {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .active-app-name {
+    font-weight: 700;
+  }
+
+  .menubar-menu-item {
+    color: var(--fg-secondary);
+  }
+
+  .menubar-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  /* =========================================================================
+     1. Menu Bar Item:
+        - Idle / Normal: Shows the top-right Idle Badge `[>_]` (no number)
+        - Alert (NeedsInput / Completed / Stuck): Shows `[Badge] + Number`
+     ========================================================================= */
+  .menubar-agentmeter-slot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 24px;
+    padding: 0 5px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .menubar-agentmeter-slot:hover {
+    background: var(--bg-track);
+  }
+
+  .menubar-badge-unit {
+    display: inline-flex;
+    align-items: center;
+    gap: 4.5px;
+  }
+
+  .menubar-count-num {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  .system-clock {
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+    font-size: 12px;
+  }
+
+  /* =========================================================================
+     2. Compact Sliding Mini Confirmation Card (~126px total height!)
+        - Single-line compact header (Icon + Title + Host/Branch + Badge)
+        - Tight 5-line terminal well (10.5px monospace, 1.24 line-height)
+        - Slim 21px action bar (Awaiting confirmation + Allow ⏎ / 2 / Deny Esc / `/`)
+     ========================================================================= */
+  .mini-confirm-anchor {
+    position: absolute;
+    top: 36px;
+    right: 90px;
+    z-index: 30;
+  }
+
+  .mini-confirm-card {
+    width: 392px;
+    background: var(--bg-card);
+    border-radius: 10px;
+    padding: 7px 9px;
+    border: 1.2px solid rgba(245, 158, 11, 0.34);
+    box-shadow: var(--hud-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    transform-origin: top right;
+    transition: opacity 0.20s cubic-bezier(0.22, 1, 0.36, 1),
+                transform 0.20s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .mini-confirm-card.hidden-card {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+    pointer-events: none;
+  }
+
+  /* Single-line Compact Header (height: 20px, saves 24px vertical space!) */
+  .mc-compact-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    height: 20px;
+  }
+
+  .mc-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .mc-family-mini {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(232, 130, 90, 0.32);
+    background: rgba(232, 130, 90, 0.12);
+    color: #e8825a;
+  }
+
+  .mc-family-mini svg {
+    width: 11.5px;
+    height: 11.5px;
+  }
+
+  .mc-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mc-meta-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-secondary);
+    flex-shrink: 0;
+  }
+
+  .mc-host-chip {
+    font-size: 9.5px;
+    font-weight: 500;
+    padding: 0 4.5px;
+    height: 15px;
+    line-height: 15px;
+    border-radius: 3.5px;
+    background: var(--bg-track);
+    color: var(--fg-secondary);
+  }
+
+  /* Compact 5-Line Terminal Preview Well (~66px height) */
+  .mc-terminal-well {
+    background: var(--bg-well);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 5px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5px;
+    font-family: var(--font-mono);
+    font-size: 10.8px;
+  }
+
+  .mc-term-line {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    color: var(--fg-secondary);
+    line-height: 1.24;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mc-term-line.highlighted {
+    color: var(--fg);
+  }
+
+  .mc-sigil {
+    color: var(--sigil);
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  /* Optional Inline Reply Box when `/` is clicked */
+  .mc-reply-bar {
+    margin-top: 3px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-faint);
+    display: none;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .mc-reply-bar.open {
+    display: flex;
+  }
+
+  .mc-reply-input {
+    flex: 1;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 10.8px;
+  }
+
+  .mc-reply-send {
+    border: 1px solid rgba(232, 130, 90, 0.4);
+    background: rgba(232, 130, 90, 0.16);
+    color: #e8825a;
+    font-family: var(--font-sans);
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 1.5px 6px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  /* Compact Bottom Approval Bar (height: 21px) */
+  .mc-approval-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    height: 21px;
+  }
+
+  .mc-awaiting-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4.5px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--amber);
+    white-space: nowrap;
+  }
+
+  .mc-awaiting-dot {
+    width: 5.5px;
+    height: 5.5px;
+    border-radius: 50%;
+    background: var(--amber);
+  }
+
+  .mc-action-btns {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .mc-btn {
+    height: 21px;
+    padding: 0 7.5px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3.5px;
+    transition: background 0.12s ease;
+  }
+
+  .mc-btn:hover {
+    background: var(--bg-raised-hover);
+  }
+
+  .mc-btn.allow {
+    background: var(--emerald-bg);
+    border-color: rgba(74, 222, 128, 0.28);
+    color: var(--emerald);
+  }
+
+  .mc-btn.allow:hover {
+    background: var(--emerald-bg-hover);
+  }
+
+  .mc-btn .kbd-hint {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    opacity: 0.75;
+  }
+
+  .mc-btn.mono {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+  }
+
+  /* Simulated Background IDE Window */
+  .simulated-ide {
+    margin: 22px auto 0;
+    width: calc(100% - 48px);
+    max-width: 840px;
+    flex: 1;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: 10px 10px 0 0;
+    padding: 14px 18px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .ide-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-faint);
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+  }
+
+  .focus-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--emerald);
+    font-weight: 500;
+  }
+
+  .ide-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 14px;
+    background: var(--accent);
+    vertical-align: middle;
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* Bottom Reference Table */
+  .spec-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .spec-card h2 {
+    margin: 0;
+    font-size: 14.5px;
+    font-weight: 600;
+  }
+
+  .menubar-states-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 12px;
+  }
+
+  .mb-state-box {
+    background: var(--bg-well);
+    border: 1px solid var(--border-faint);
+    border-radius: 10px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mb-state-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mb-state-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .mb-mock-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4.5px;
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 6px;
+    background: var(--menubar-bg);
+    border: 1px solid var(--border);
+  }
+
+  .mb-state-desc {
+    font-size: 11.5px;
+    color: var(--fg-secondary);
+    line-height: 1.38;
+  }
+</style>
+</head>
+<body>
+<div class="workbench">
+  <!-- Header -->
+  <header class="top-bar">
+    <div>
+      <h1>AgentMeter · 无打断感知 UI Review V2（统一右上角徽章图标 + 紧凑型 5 行迷你确认卡）</h1>
+      <p>菜单栏空闲时直接采用右上角同款 <code>[&gt;_]</code> 徽章图标；待确认迷你卡片压缩为单行头部 + 紧凑 5 行终端预览（总高仅 ~126pt）</p>
+    </div>
+
+    <div class="controls-row">
+      <div class="segmented-group" role="group" aria-label="示例切换">
+        <span class="seg-label">5行预览示例</span>
+        <button type="button" class="seg-btn active" data-sample="bash">示例 A：Bash 命令确认 (5行)</button>
+        <button type="button" class="seg-btn" data-sample="edit">示例 B：文件修改确认 (5行)</button>
+      </div>
+
+      <div class="segmented-group" role="group" aria-label="主题">
+        <button type="button" class="seg-btn active" id="theme-dark-btn">暗色 (Dark)</button>
+        <button type="button" class="seg-btn" id="theme-light-btn">亮色 (Light)</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Scenario Switcher -->
+  <section class="scenario-bar">
+    <div style="font-size:12.5px;font-weight:600;color:var(--fg);">
+      👇 点击切换 4 种菜单栏状态与紧凑型滑出卡片：
+    </div>
+    <div class="scenario-btns">
+      <button type="button" class="scene-btn active" data-scene="needsInput">
+        <span class="scene-dot" style="background:var(--amber)"></span>
+        1. 等待权限确认（琥珀色 [&gt;_] + 数字 &amp; 滑出紧凑迷你卡片）
+      </button>
+      <button type="button" class="scene-btn" data-scene="completed">
+        <span class="scene-dot" style="background:var(--emerald)"></span>
+        2. 未读完成（翠绿笑眼 [^ ^] + 数字，不弹卡片）
+      </button>
+      <button type="button" class="scene-btn" data-scene="stuck">
+        <span class="scene-dot" style="background:var(--danger)"></span>
+        3. 长时卡住 Block（红色 [✕ ✕] + 数字，不弹卡片）
+      </button>
+      <button type="button" class="scene-btn" data-scene="idle">
+        <span class="scene-dot" style="background:var(--fg-tertiary)"></span>
+        4. 空闲 / 平时状态（右上角同款空闲 [&gt;_] 徽章图标，无数字）
+      </button>
+    </div>
+  </section>
+
+  <!-- Simulated macOS Screen -->
+  <section class="macos-screen" aria-label="macOS Desktop Simulation">
+    <!-- Top macOS Menu Bar -->
+    <div class="macos-menubar">
+      <div class="menubar-left">
+        <span class="apple-logo"></span>
+        <span class="active-app-name">Cursor</span>
+        <span class="menubar-menu-item">File</span>
+        <span class="menubar-menu-item">Edit</span>
+        <span class="menubar-menu-item">Selection</span>
+        <span class="menubar-menu-item">View</span>
+        <span class="menubar-menu-item">Go</span>
+      </div>
+
+      <div class="menubar-right">
+        <!-- AgentMeter Menu Bar Slot -->
+        <div class="menubar-agentmeter-slot" id="menubar-slot" title="点击打开完整 AgentMeter 面板">
+          <!-- Populated dynamically by JS -->
+        </div>
+
+        <span style="opacity:0.75;font-size:12px;">Wi-Fi</span>
+        <span style="opacity:0.75;font-size:12px;">100%</span>
+        <span class="system-clock">周日 17:02</span>
+      </div>
+    </div>
+
+    <!-- Compact Sliding Mini Confirmation Card (~126pt height) -->
+    <div class="mini-confirm-anchor">
+      <div class="mini-confirm-card" id="mini-confirm-card">
+        <!-- Single-Line Compact Header -->
+        <div class="mc-compact-header">
+          <div class="mc-header-left">
+            <div class="mc-family-mini" id="mc-family-icon"></div>
+            <span class="mc-title" id="mc-title">Run release build &amp; verify IOKit</span>
+          </div>
+          <div class="mc-meta-inline" id="mc-subtitle">
+            <span class="mc-host-chip">Rex</span>
+            <span>AgentMeter</span>
+          </div>
+          <canvas class="anim-badge" data-state="needsInput" width="28" height="17" style="width:28px;height:17px;flex-shrink:0;"></canvas>
+        </div>
+
+        <!-- Compact 5-Line Terminal Preview Box -->
+        <div class="mc-terminal-well">
+          <div id="mc-preview-lines" style="display:flex;flex-direction:column;gap:1.5px;">
+            <!-- 5 lines populated by JS -->
+          </div>
+
+          <!-- Expandable `/` custom reply input -->
+          <div class="mc-reply-bar" id="mc-reply-bar">
+            <span style="color:#e8825a;font-weight:700;">❯</span>
+            <input type="text" class="mc-reply-input" id="mc-reply-input" placeholder="输入自定义回复至终端… (回车发送)" />
+            <button type="button" class="mc-reply-send" id="mc-reply-send">发送 ⏎</button>
+          </div>
+        </div>
+
+        <!-- Compact 21px Approval Action Bar -->
+        <div class="mc-approval-bar">
+          <span class="mc-awaiting-label">
+            <span class="mc-awaiting-dot"></span>
+            <span>等待终端权限确认</span>
+          </span>
+
+          <div class="mc-action-btns">
+            <button type="button" class="mc-btn allow" id="btn-allow-primary" title="发送回车确认允许（选项 1）">
+              <span>允许</span>
+              <span class="kbd-hint">⏎</span>
+            </button>
+            <button type="button" class="mc-btn mono" id="btn-allow-secondary" title="选择第 2 项并确认（如：始终允许）">2</button>
+            <button type="button" class="mc-btn" id="btn-deny" title="发送拒绝指令或 Esc 取消">
+              <span>拒绝</span>
+              <span class="kbd-hint">Esc</span>
+            </button>
+            <button type="button" class="mc-btn mono" id="btn-toggle-reply" title="输入自定义回复">/</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Simulated Background IDE Window -->
+    <div class="simulated-ide">
+      <div class="ide-header">
+        <span>Sources/AgentMeter/AgentMeterApp.swift — Edited</span>
+        <span class="focus-indicator">● 紧凑单行头部 + 5 行高密度终端预览（卡片总高从 215pt 降至 ~126pt）</span>
+      </div>
+      <div><span style="color:var(--fg-tertiary)">42</span> &nbsp;&nbsp;<span style="color:var(--accent)">var</span> menuBarVisualState: MenuBarVisualState {</div>
+      <div><span style="color:var(--fg-tertiary)">43</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--accent)">if</span> activeAgentNeedsInputCount &gt; 0 { <span style="color:var(--accent)">return</span> .needsInput(count: activeAgentNeedsInputCount) }</div>
+      <div><span style="color:var(--fg-tertiary)">44</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--accent)">if</span> activeAgentStuckCount &gt; 0 { <span style="color:var(--accent)">return</span> .stuck(count: activeAgentStuckCount) }</div>
+      <div><span style="color:var(--fg-tertiary)">45</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--accent)">if</span> unreadCompletionCount &gt; 0 { <span style="color:var(--accent)">return</span> .unreadCompleted(count: unreadCompletionCount) }</div>
+      <div><span style="color:var(--fg-tertiary)">46</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--accent)">return</span> .idle <span style="color:var(--fg-tertiary)">// 空闲时同样使用右上角同款 [&gt;_] 徽章图标（无数字）</span><span class="ide-cursor"></span></div>
+      <div><span style="color:var(--fg-tertiary)">47</span> &nbsp;&nbsp;}</div>
+    </div>
+  </section>
+
+  <!-- All 4 Menu Bar Icon States Side-by-Side Reference -->
+  <section class="spec-card">
+    <h2>菜单栏（Menu Bar）4 种状态图标对照表（全部采用右上角同款徽章风格）</h2>
+    <div class="menubar-states-grid">
+      <div class="mb-state-box">
+        <div class="mb-state-top">
+          <span class="mb-state-title">1. 待确认 (Needs Input)</span>
+          <div class="mb-mock-pill">
+            <canvas class="anim-badge" data-state="needsInput" width="28" height="16" style="width:28px;height:16px;"></canvas>
+            <span class="menubar-count-num" style="color:var(--amber);">1</span>
+          </div>
+        </div>
+        <div class="mb-state-desc">菜单栏显示<strong>琥珀色 <code>[&gt;_]</code> 徽章 + 待确认数量</strong>，并在下方自动滑出紧凑型 5 行确认卡片。</div>
+      </div>
+
+      <div class="mb-state-box">
+        <div class="mb-state-top">
+          <span class="mb-state-title">2. 未读完成 (Completed)</span>
+          <div class="mb-mock-pill">
+            <canvas class="anim-badge" data-state="completed" width="28" height="16" style="width:28px;height:16px;"></canvas>
+            <span class="menubar-count-num" style="color:var(--emerald);">2</span>
+          </div>
+        </div>
+        <div class="mb-state-desc">菜单栏显示<strong>翠绿笑眼 <code>[^ ^]</code> 徽章 + 未读完成数量</strong>（不弹窗打扰，点开面板或已读后恢复空闲图标）。</div>
+      </div>
+
+      <div class="mb-state-box">
+        <div class="mb-state-top">
+          <span class="mb-state-title">3. 长时卡住 (Blocked / Stuck)</span>
+          <div class="mb-mock-pill">
+            <canvas class="anim-badge" data-state="stuck" width="28" height="16" style="width:28px;height:16px;"></canvas>
+            <span class="menubar-count-num" style="color:var(--danger);">1</span>
+          </div>
+        </div>
+        <div class="mb-state-desc">菜单栏显示<strong>红色 <code>[✕ ✕]</code> 徽章 + 卡住数量</strong>，提醒后台有会话长时卡住。</div>
+      </div>
+
+      <div class="mb-state-box">
+        <div class="mb-state-top">
+          <span class="mb-state-title">4. 空闲 / 平时状态 (Idle)</span>
+          <div class="mb-mock-pill">
+            <canvas class="anim-badge" data-state="idle" width="28" height="16" style="width:28px;height:16px;"></canvas>
+          </div>
+        </div>
+        <div class="mb-state-desc">平时状态直接显示<strong>右上角同款空闲 <code>[&gt;_]</code> 徽章图标（不带数字）</strong>，视觉语言全局完全统一。</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const STATE_PALETTE = {
+    needsInput: {
+      dark: { primary: '#fde68a', secondary: '#fbbf24', bg: '#211809', side: 'rgba(245,158,11,0.24)', border: 'rgba(251,191,36,0.62)' },
+      light: { primary: '#b45309', secondary: '#d97706', bg: '#fffbeb', side: 'rgba(245,158,11,0.15)', border: 'rgba(217,119,6,0.40)' }
+    },
+    completed: {
+      dark: { primary: '#4ade80', secondary: '#86efac', bg: '#0b1e16', side: 'rgba(16,185,129,0.22)', border: 'rgba(74,222,128,0.50)' },
+      light: { primary: '#059669', secondary: '#10b981', bg: '#ecfdf5', side: 'rgba(16,185,129,0.12)', border: 'rgba(5,150,105,0.34)' }
+    },
+    stuck: {
+      dark: { primary: '#f87171', secondary: '#ef4444', bg: '#220d10', side: 'rgba(239,68,68,0.24)', border: 'rgba(248,113,113,0.58)' },
+      light: { primary: '#dc2626', secondary: '#ef4444', bg: '#fef2f2', side: 'rgba(239,68,68,0.14)', border: 'rgba(220,38,38,0.38)' }
+    },
+    idle: {
+      dark: { primary: '#94a3b8', secondary: '#cbd5e1', bg: '#141720', side: 'rgba(148,163,184,0.08)', border: 'rgba(255,255,255,0.18)' },
+      light: { primary: '#64748b', secondary: '#475569', bg: '#f1f5f9', side: 'rgba(100,116,139,0.06)', border: 'rgba(15,23,42,0.16)' }
+    }
+  };
+
+  const CLAUDE_SVG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>`;
+
+  const SAMPLES = {
+    bash: {
+      title: 'Run release build & verify IOKit',
+      host: 'Rex',
+      workspace: 'AgentMeter',
+      lines: [
+        '⏺ Bash(./scripts/build-app.sh && pmset -g assertions | grep AgentMeter)',
+        '  Build release app bundle and verify IOKit PreventUserIdleSystemSleep',
+        'Do you want to proceed with running this command?',
+        '❯ 1. Yes, allow once',
+        '  2. Yes, and don\'t ask again for ./scripts/build-app.sh in ~/code/AgentMeter'
+      ]
+    },
+    edit: {
+      title: 'Add IOPMAssertion keep-awake manager',
+      host: 'Ghostty',
+      workspace: 'AgentMeter',
+      lines: [
+        '⏺ Edit(Sources/AgentMeter/AgentMeterModel.swift)',
+        '  + private var sleepAssertionID: IOPMAssertionID = 0',
+        '  + func updateSleepAssertion(workingCount: Int) { ... }',
+        'Do you want to make this edit to AgentMeterModel.swift?',
+        '❯ 1. Yes   2. Yes, allow all edits this session   3. No (Esc)'
+      ]
+    }
+  };
+
+  let currentScene = 'needsInput';
+  let currentSample = 'bash';
+
+  function isLight() {
+    return document.documentElement.getAttribute('data-theme') === 'light';
+  }
+
+  function renderSampleContent() {
+    const sample = SAMPLES[currentSample];
+    document.getElementById('mc-family-icon').innerHTML = CLAUDE_SVG;
+    document.getElementById('mc-title').textContent = sample.title;
+    document.getElementById('mc-subtitle').innerHTML = `
+      <span class="mc-host-chip">${sample.host}</span>
+      <span>${sample.workspace}</span>
+    `;
+
+    const linesContainer = document.getElementById('mc-preview-lines');
+    linesContainer.innerHTML = sample.lines.map((line, idx) => {
+      const isFirst = idx === 0;
+      const isHighlight = isFirst || line.startsWith('⏺') || line.startsWith('❯') || line.toLowerCase().includes('do you want');
+      return `
+        <div class="mc-term-line ${isHighlight ? 'highlighted' : ''}">
+          ${isFirst ? '<span class="mc-sigil">❯</span>' : '<span style="width:9px;flex-shrink:0;display:inline-block;"></span>'}
+          <span>${line}</span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function updateStage() {
+    const slot = document.getElementById('menubar-slot');
+    const card = document.getElementById('mini-confirm-card');
+
+    if (currentScene === 'needsInput') {
+      slot.innerHTML = `
+        <div class="menubar-badge-unit">
+          <canvas class="anim-badge" data-state="needsInput" width="28" height="16" style="width:28px;height:16px;"></canvas>
+          <span class="menubar-count-num" style="color:var(--amber);">1</span>
+        </div>
+      `;
+      card.classList.remove('hidden-card');
+    } else if (currentScene === 'completed') {
+      slot.innerHTML = `
+        <div class="menubar-badge-unit">
+          <canvas class="anim-badge" data-state="completed" width="28" height="16" style="width:28px;height:16px;"></canvas>
+          <span class="menubar-count-num" style="color:var(--emerald);">2</span>
+        </div>
+      `;
+      card.classList.add('hidden-card');
+    } else if (currentScene === 'stuck') {
+      slot.innerHTML = `
+        <div class="menubar-badge-unit">
+          <canvas class="anim-badge" data-state="stuck" width="28" height="16" style="width:28px;height:16px;"></canvas>
+          <span class="menubar-count-num" style="color:var(--danger);">1</span>
+        </div>
+      `;
+      card.classList.add('hidden-card');
+    } else {
+      // Idle / Normal: Uses the exact same top-right Idle badge `[>_]` (no number)
+      slot.innerHTML = `
+        <div class="menubar-badge-unit">
+          <canvas class="anim-badge" data-state="idle" width="28" height="16" style="width:28px;height:16px;"></canvas>
+        </div>
+      `;
+      card.classList.add('hidden-card');
+    }
+  }
+
+  function selectScene(scene) {
+    currentScene = scene;
+    document.querySelectorAll('.scene-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.scene === scene);
+    });
+    updateStage();
+  }
+
+  document.querySelectorAll('.scene-btn').forEach(btn => {
+    btn.addEventListener('click', () => selectScene(btn.dataset.scene));
+  });
+
+  document.querySelectorAll('[data-sample]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-sample]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSample = btn.dataset.sample;
+      renderSampleContent();
+      selectScene('needsInput');
+    });
+  });
+
+  // Mini Card Action Buttons
+  document.getElementById('btn-allow-primary').addEventListener('click', () => selectScene('idle'));
+  document.getElementById('btn-allow-secondary').addEventListener('click', () => selectScene('idle'));
+  document.getElementById('btn-deny').addEventListener('click', () => selectScene('idle'));
+  document.getElementById('btn-toggle-reply').addEventListener('click', () => {
+    const bar = document.getElementById('mc-reply-bar');
+    bar.classList.toggle('open');
+    if (bar.classList.contains('open')) {
+      document.getElementById('mc-reply-input').focus();
+    }
+  });
+  document.getElementById('mc-reply-send').addEventListener('click', () => {
+    document.getElementById('mc-reply-bar').classList.remove('open');
+    document.getElementById('mc-reply-input').value = '';
+    selectScene('idle');
+  });
+
+  document.getElementById('theme-dark-btn').addEventListener('click', (e) => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    e.target.classList.add('active');
+    document.getElementById('theme-light-btn').classList.remove('active');
+  });
+
+  document.getElementById('theme-light-btn').addEventListener('click', (e) => {
+    document.documentElement.setAttribute('data-theme', 'light');
+    e.target.classList.add('active');
+    document.getElementById('theme-dark-btn').classList.remove('active');
+  });
+
+  function roundedRect(ctx, x, y, w, h, r) {
+    const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, w, h, rr);
+    else {
+      ctx.moveTo(x + rr, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rr);
+      ctx.arcTo(x + w, y + h, x, y + h, rr);
+      ctx.arcTo(x, y + h, x, y, rr);
+      ctx.arcTo(x, y, x + w, y, rr);
+      ctx.closePath();
+    }
+  }
+
+  function renderBadgeCanvas(canvas, stateKey, t) {
+    const dpr = window.devicePixelRatio || 2;
+    const cssW = parseFloat(canvas.style.width) || 28;
+    const cssH = parseFloat(canvas.style.height) || 16;
+    const targetW = Math.round(cssW * dpr);
+    const targetH = Math.round(cssH * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    const cfg = STATE_PALETTE[stateKey] || STATE_PALETTE.idle;
+    const p = isLight() ? cfg.light : cfg.dark;
+    const s = cssH / 20.0;
+    const radius = 5.5 * s;
+
+    ctx.save();
+    roundedRect(ctx, 0.6, 0.6, cssW - 1.2, cssH - 1.2, radius);
+    ctx.clip();
+    ctx.fillStyle = p.bg;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const leftG = ctx.createLinearGradient(0, 0, cssW * 0.45, 0);
+    leftG.addColorStop(0, p.side);
+    leftG.addColorStop(1, 'transparent');
+    ctx.fillStyle = leftG;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const rightG = ctx.createLinearGradient(cssW, 0, cssW * 0.55, 0);
+    rightG.addColorStop(0, p.side);
+    rightG.addColorStop(1, 'transparent');
+    ctx.fillStyle = rightG;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const cx = cssW / 2;
+    const cy = cssH / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.fillStyle = p.primary;
+    ctx.strokeStyle = p.primary;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1.85;
+
+    if (stateKey === 'completed') {
+      const gap = 3.3;
+      [-gap, gap].forEach(ox => {
+        ctx.beginPath();
+        ctx.arc(ox, 1.1, 2.2, Math.PI * 1.15, Math.PI * 1.85, false);
+        ctx.stroke();
+      });
+    } else if (stateKey === 'stuck') {
+      ctx.globalAlpha = 0.65 + 0.35 * Math.sin(t * 5.0);
+      const gap = 3.5, r = 1.95;
+      [-gap, gap].forEach(ox => {
+        ctx.beginPath();
+        ctx.moveTo(ox - r, -r); ctx.lineTo(ox + r, r);
+        ctx.moveTo(ox + r, -r); ctx.lineTo(ox - r, r);
+        ctx.stroke();
+      });
+    } else {
+      const chX = -3.6;
+      ctx.beginPath();
+      ctx.moveTo(chX - 1.4, -2.5);
+      ctx.lineTo(chX + 1.3, 0);
+      ctx.lineTo(chX - 1.4, 2.5);
+      ctx.stroke();
+
+      ctx.globalAlpha = (stateKey === 'needsInput')
+        ? (0.2 + 0.8 * (0.5 + 0.5 * Math.sin(t * 9.5)))
+        : (0.2 + 0.7 * (0.5 + 0.5 * Math.sin(t * 2.2)));
+      ctx.strokeStyle = p.secondary;
+      ctx.beginPath();
+      ctx.moveTo(0.8, 2.4);
+      ctx.lineTo(4.8, 2.4);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    roundedRect(ctx, 0.6, 0.6, cssW - 1.2, cssH - 1.2, radius);
+    ctx.strokeStyle = p.border;
+    ctx.lineWidth = 1.15;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  renderSampleContent();
+  updateStage();
+
+  const start = performance.now();
+  function loop(now) {
+    const t = (now - start) / 1000;
+    document.querySelectorAll('.anim-badge').forEach(c => {
+      renderBadgeCanvas(c, c.dataset.state || 'idle', t);
+    });
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

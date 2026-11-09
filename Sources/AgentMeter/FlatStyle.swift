@@ -445,7 +445,7 @@ struct PointingHandCursorOverlay: NSViewRepresentable {
             if let trackingArea { removeTrackingArea(trackingArea) }
             let area = NSTrackingArea(
                 rect: .zero,
-                options: [.inVisibleRect, .mouseEnteredAndExited, .mouseMoved, .cursorUpdate, .activeAlways],
+                options: [.inVisibleRect, .mouseEnteredAndExited, .cursorUpdate, .activeAlways],
                 owner: self,
                 userInfo: nil
             )
@@ -542,6 +542,7 @@ enum PanelKeyNavigationCommand {
     case moveRight
     case confirmSelection
     case openInlineReply
+    case togglePiP
     case escape
 }
 
@@ -573,13 +574,15 @@ struct PanelWindowMask: NSViewRepresentable {
         var onKeyCommand: (@MainActor (PanelKeyNavigationCommand) -> Bool)?
         private var updatingWindow = false
         private var lastWindowVisible = false
+        private var lastConfiguredAppearanceName: NSAppearance.Name?
+        private weak var lastConfiguredWindow: NSWindow?
         private var keyMonitor: Any?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             NotificationCenter.default.removeObserver(self)
             if let window {
-                for name in [NSWindow.didUpdateNotification, NSWindow.didResizeNotification,
+                for name in [NSWindow.didResizeNotification,
                              NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification,
                              NSWindow.willCloseNotification, NSWindow.didChangeOcclusionStateNotification] {
                     NotificationCenter.default.addObserver(self, selector: #selector(windowUpdated), name: name, object: window)
@@ -591,27 +594,20 @@ struct PanelWindowMask: NSViewRepresentable {
                     onVisibilityChange?(false)
                 }
             }
-            updateWindow()
-        }
-
-        override func setFrameSize(_ newSize: NSSize) {
-            super.setFrameSize(newSize)
-            updateWindow()
-        }
-
-        override func layout() {
-            super.layout()
-            updateWindow()
+            updateWindow(forceChrome: true)
         }
 
         override func viewDidChangeEffectiveAppearance() {
             super.viewDidChangeEffectiveAppearance()
-            updateWindow()
+            updateWindow(forceChrome: true)
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-        @objc private func windowUpdated(_ notification: Notification) { updateWindow() }
+        @objc private func windowUpdated(_ notification: Notification) {
+            let isResize = notification.name == NSWindow.didResizeNotification
+            updateWindow(forceChrome: isResize)
+        }
 
         private func installKeyMonitor() {
             guard keyMonitor == nil else { return }
@@ -685,6 +681,11 @@ struct PanelWindowMask: NSViewRepresentable {
                     return onKeyCommand?(.openInlineReply) == true
                 }
                 return false
+            case 35: // 'p' key (Pin/Unpin Picture-in-Picture)
+                if !modifiers.contains(.shift) {
+                    return onKeyCommand?(.togglePiP) == true
+                }
+                return false
             case 53: // Escape
                 if onKeyCommand?(.escape) == true {
                     return true
@@ -697,10 +698,12 @@ struct PanelWindowMask: NSViewRepresentable {
             }
         }
 
-        func updateWindow() {
+        func updateWindow(forceChrome: Bool = false) {
             let isVisible = window?.isVisible == true
+            var visibilityJustChanged = false
             if isVisible != lastWindowVisible {
                 lastWindowVisible = isVisible
+                visibilityJustChanged = true
                 if isVisible {
                     installKeyMonitor()
                     let targetWindow = window
@@ -713,11 +716,17 @@ struct PanelWindowMask: NSViewRepresentable {
                 }
                 onVisibilityChange?(isVisible)
             }
-            guard !updatingWindow, let window, let contentView = window.contentView,
-                  bounds.width > 0, bounds.height > 0 else { return }
+            guard !updatingWindow, let window, let contentView = window.contentView else { return }
+            let desiredAppearance = appearanceMode.appKitAppearance
+            let appearanceChanged = window.appearance?.name != desiredAppearance?.name || lastConfiguredAppearanceName != desiredAppearance?.name
+            let windowChanged = lastConfiguredWindow !== window
+            guard forceChrome || visibilityJustChanged || appearanceChanged || windowChanged else { return }
+
             updatingWindow = true
             defer { updatingWindow = false }
-            let desiredAppearance = appearanceMode.appKitAppearance
+            lastConfiguredWindow = window
+            lastConfiguredAppearanceName = desiredAppearance?.name
+
             if window.appearance?.name != desiredAppearance?.name {
                 window.appearance = desiredAppearance
             }

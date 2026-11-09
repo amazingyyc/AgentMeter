@@ -4236,7 +4236,7 @@ final class AgentActivityTracker {
                 // Keep up to 7 lines for approval prompts so both the command/tool and numbered options are visible
                 return Array(filtered.suffix(7))
             }
-            return Array(filtered.suffix(3))
+            return Array(filtered.suffix(6))
         }
     }
 

@@ -1,0 +1,1314 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AgentMeter · 单卡片画中画 (PiP 5行实时盯盘版) 交互预览</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #090a0f;
+    --bg-elevated: #11131a;
+    --bg-panel: #111113;
+    --bg-card: #1a1a1d;
+    --bg-card-hover: #212125;
+    --bg-raised: #26262a;
+    --bg-raised-hover: #313134;
+    --bg-well: #141417;
+    --bg-track: rgba(255, 255, 255, 0.07);
+    --fg: #ececee;
+    --fg-secondary: #9d9da1;
+    --fg-tertiary: #6c6c70;
+    --border: rgba(255, 255, 255, 0.09);
+    --border-faint: rgba(255, 255, 255, 0.05);
+    --accent: #3b82f6;
+    --accent-text: #93c5fd;
+    --amber: #fbbf24;
+    --emerald: #4ade80;
+    --emerald-bg: rgba(34, 197, 94, 0.16);
+    --emerald-bg-hover: rgba(34, 197, 94, 0.24);
+    --danger: #f87171;
+    --danger-bg: rgba(239, 68, 68, 0.16);
+    --sigil: #6ee7a8;
+    --menubar-bg: rgba(20, 21, 26, 0.90);
+    --pip-shadow: 0 22px 48px rgba(0, 0, 0, 0.68), 0 3px 10px rgba(0, 0, 0, 0.42);
+    --font-sans: 'Instrument Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    color-scheme: dark;
+  }
+
+  :root[data-theme="light"] {
+    --bg: #eef1f6;
+    --bg-elevated: #ffffff;
+    --bg-panel: #f9f9fb;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f9f9fb;
+    --bg-raised: #ffffff;
+    --bg-raised-hover: #e8e8ec;
+    --bg-well: #f0f0f3;
+    --bg-track: #e8e8ec;
+    --fg: #1c2024;
+    --fg-secondary: #60646c;
+    --fg-tertiary: #8b8d98;
+    --border: #e2e4ea;
+    --border-faint: #f0f0f3;
+    --accent: #3e63dd;
+    --accent-text: #3358d4;
+    --amber: #b45309;
+    --emerald: #15803d;
+    --emerald-bg: rgba(34, 197, 94, 0.12);
+    --emerald-bg-hover: rgba(34, 197, 94, 0.18);
+    --danger: #b91c1c;
+    --danger-bg: rgba(239, 68, 68, 0.10);
+    --sigil: #15803d;
+    --menubar-bg: rgba(246, 247, 250, 0.92);
+    --pip-shadow: 0 20px 44px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.08);
+    color-scheme: light;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 44px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .workbench {
+    max-width: 1140px;
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Header Bar */
+  .top-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+  }
+
+  .top-bar h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .top-bar p {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+    color: var(--fg-secondary);
+  }
+
+  .controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .segmented-group {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-track);
+    padding: 3px;
+    border-radius: 9px;
+    border: 1px solid var(--border-faint);
+    gap: 2px;
+  }
+
+  .seg-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg-tertiary);
+    padding-inline: 8px 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .seg-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--fg-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.16s ease;
+    white-space: nowrap;
+  }
+
+  .seg-btn:hover {
+    color: var(--fg);
+  }
+
+  .seg-btn.active {
+    background: var(--bg-card);
+    color: var(--fg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Control Toolbar */
+  .scenario-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 11px 16px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .scenario-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+
+  .scene-btn {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--fg-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+
+  .scene-btn:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+
+  .scene-btn.active {
+    background: rgba(59, 130, 246, 0.14);
+    border-color: var(--accent);
+    color: var(--fg);
+  }
+
+  .scene-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  /* Simulated macOS Desktop Workspace */
+  .macos-screen {
+    position: relative;
+    height: 490px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(59, 130, 246, 0.09), transparent 50%),
+      radial-gradient(circle at 85% 80%, rgba(232, 130, 90, 0.08), transparent 48%),
+      var(--bg-well);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+  }
+
+  .macos-menubar {
+    height: 30px;
+    background: var(--menubar-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: 16px;
+    font-size: 12px;
+    font-weight: 500;
+    z-index: 10;
+  }
+
+  .menubar-left, .menubar-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  /* Simulated Full-Screen IDE in Background */
+  .ide-workspace {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    background: var(--bg-elevated);
+    margin: 14px 18px 0;
+    border-radius: 11px 11px 0 0;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    overflow: hidden;
+  }
+
+  .ide-sidebar {
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border);
+    padding: 12px;
+    font-size: 11.5px;
+    color: var(--fg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ide-file {
+    padding: 4px 8px;
+    border-radius: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .ide-file.active {
+    background: var(--bg-track);
+    color: var(--fg);
+  }
+
+  .ide-editor {
+    padding: 14px 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ide-tabbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border-faint);
+    font-family: var(--font-sans);
+    font-size: 11.5px;
+  }
+
+  /* Corner Snap Guides (shown while dragging PiP card) */
+  .corner-guide {
+    position: absolute;
+    width: 120px;
+    height: 60px;
+    border: 1.5px dashed rgba(96, 165, 250, 0.35);
+    border-radius: 10px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+    z-index: 25;
+  }
+
+  .macos-screen.dragging .corner-guide {
+    opacity: 1;
+  }
+
+  .corner-guide.active-snap {
+    border-color: var(--accent);
+    background: rgba(59, 130, 246, 0.12);
+  }
+
+  .guide-br { right: 18px; bottom: 16px; }
+  .guide-tr { right: 18px; top: 42px; }
+  .guide-bl { left: 18px; bottom: 16px; }
+  .guide-tl { left: 18px; top: 42px; }
+
+  /* =========================================================================
+     PiP Floating Card (Constant 5-Line Live Terminal Well across ALL states)
+     - Width: 392pt, Height: ~142pt (0px layout jump when switching states)
+     ========================================================================= */
+  .pip-window {
+    position: absolute;
+    right: 22px;
+    bottom: 20px;
+    width: 392px;
+    background: var(--bg-card);
+    border-radius: 11px;
+    padding: 8px 10px;
+    border: 1.2px solid var(--border);
+    box-shadow: var(--pip-shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 40;
+    cursor: grab;
+    transition:
+      width 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.20s ease,
+      border-color 0.18s ease,
+      box-shadow 0.18s ease,
+      left 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+      top 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+      right 0.24s cubic-bezier(0.22, 1, 0.36, 1),
+      bottom 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .pip-window.dragging-now {
+    cursor: grabbing;
+    transition: opacity 0.15s ease, border-color 0.15s ease;
+    box-shadow: 0 28px 60px rgba(0, 0, 0, 0.78), 0 0 0 1.5px var(--accent);
+  }
+
+  /* Ghost translucency when unhovered */
+  .pip-window.ghost-enabled:not(:hover):not(.state-needsInput) {
+    opacity: 0.84;
+  }
+
+  .pip-window:hover {
+    border-color: rgba(232, 130, 90, 0.55);
+  }
+
+  .pip-window.state-needsInput {
+    border-color: rgba(245, 158, 11, 0.45);
+  }
+
+  .pip-window.state-stuck {
+    border-color: rgba(239, 68, 68, 0.45);
+  }
+
+  /* Collapsed Mini Pill Mode */
+  .pip-window.collapsed-pill {
+    width: 256px;
+    padding: 6px 9px;
+    border-radius: 999px;
+    gap: 0;
+  }
+
+  .pip-window.collapsed-pill .pip-body-section,
+  .pip-window.collapsed-pill .pip-footer-section {
+    display: none;
+  }
+
+  /* Top Header Row of PiP Card */
+  .pip-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    height: 22px;
+  }
+
+  .pip-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .pip-family-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(232, 130, 90, 0.34);
+    background: rgba(232, 130, 90, 0.13);
+    color: #e8825a;
+  }
+
+  .pip-family-icon svg {
+    width: 11.5px;
+    height: 11.5px;
+  }
+
+  .pip-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pip-host-tag {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 500;
+    padding: 0 4.5px;
+    height: 15px;
+    line-height: 15px;
+    border-radius: 3.5px;
+    background: var(--bg-track);
+    color: var(--fg-secondary);
+    flex-shrink: 0;
+  }
+
+  .pip-header-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .pip-win-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .pip-ctrl-btn {
+    width: 19px;
+    height: 19px;
+    border-radius: 5px;
+    border: 1px solid var(--border-faint);
+    background: var(--bg-track);
+    color: var(--fg-secondary);
+    font-size: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.12s ease;
+  }
+
+  .pip-ctrl-btn:hover {
+    color: var(--fg);
+    background: var(--bg-raised-hover);
+  }
+
+  .pip-ctrl-btn.active-pin {
+    color: var(--accent-text);
+    background: rgba(59, 130, 246, 0.16);
+    border-color: rgba(59, 130, 246, 0.32);
+  }
+
+  /* 5-Line Constant-Height Live Streaming Terminal Well */
+  .pip-body-section {
+    background: var(--bg-well);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 6px 8.5px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .pip-lines-box {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 2.5px;
+    min-height: 78px; /* Fixed 5-line height so all states show rich context without layout shift */
+  }
+
+  .pip-line {
+    display: flex;
+    align-items: baseline;
+    gap: 5.5px;
+    color: var(--fg-secondary);
+    line-height: 1.28;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pip-line.primary {
+    color: var(--fg);
+  }
+
+  .pip-line.diff-plus {
+    color: var(--emerald);
+  }
+
+  .pip-line.diff-minus {
+    color: var(--danger);
+  }
+
+  .pip-sigil {
+    color: var(--sigil);
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  /* Inline Reply inside PiP */
+  .pip-reply-row {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border-faint);
+  }
+
+  .pip-reply-row.open {
+    display: flex;
+  }
+
+  .pip-reply-input {
+    flex: 1;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .pip-reply-send {
+    border: 1px solid rgba(232, 130, 90, 0.4);
+    background: rgba(232, 130, 90, 0.16);
+    color: #e8825a;
+    font-family: var(--font-sans);
+    font-size: 9.5px;
+    font-weight: 600;
+    padding: 1.5px 6px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  /* Bottom Telemetry & Action Bar of PiP */
+  .pip-footer-section {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    height: 21px;
+    font-size: 10.5px;
+  }
+
+  .pip-telemetry {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    color: var(--fg-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .pip-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .pip-btn {
+    height: 21px;
+    padding: 0 7.5px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--bg-raised);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .pip-btn:hover {
+    background: var(--bg-raised-hover);
+  }
+
+  .pip-btn.allow {
+    background: var(--emerald-bg);
+    border-color: rgba(74, 222, 128, 0.30);
+    color: var(--emerald);
+  }
+
+  .pip-btn.stop {
+    background: var(--danger-bg);
+    border-color: rgba(248, 113, 113, 0.28);
+    color: var(--danger);
+  }
+
+  /* Bottom Spec Cards */
+  .spec-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+  }
+
+  .spec-box {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .spec-box h3 {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  .spec-box p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--fg-secondary);
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+<div class="workbench">
+  <!-- Top Bar -->
+  <header class="top-bar">
+    <div>
+      <h1>AgentMeter · 单卡片画中画（全状态固定 5 行实时盯盘版）</h1>
+      <p>所有状态（Working / Confirm / Done / Stuck）统一展示 5 行实时终端流式输出，高度恒定不跳动，信息量饱满</p>
+    </div>
+
+    <div class="controls-row">
+      <div class="segmented-group" role="group" aria-label="尺寸模式">
+        <span class="seg-label">PiP 形态</span>
+        <button type="button" class="seg-btn active" data-pipmode="standard">5行标准盯盘卡 (392×142pt)</button>
+        <button type="button" class="seg-btn" data-pipmode="pill">极简悬浮胶囊 (双击折叠)</button>
+      </div>
+
+      <div class="segmented-group" role="group" aria-label="角落吸附">
+        <span class="seg-label">磁吸角落</span>
+        <button type="button" class="seg-btn active" data-corner="br">右下 ↘</button>
+        <button type="button" class="seg-btn" data-corner="tr">右上 ↗</button>
+        <button type="button" class="seg-btn" data-corner="bl">左下 ↙</button>
+        <button type="button" class="seg-btn" data-corner="tl">左上 ↖</button>
+      </div>
+
+      <div class="segmented-group" role="group" aria-label="半透明模式">
+        <button type="button" class="seg-btn active" id="ghost-toggle-btn">焦外微透 (84%)</button>
+      </div>
+
+      <div class="segmented-group" role="group" aria-label="主题">
+        <button type="button" class="seg-btn active" id="theme-dark-btn">暗色</button>
+        <button type="button" class="seg-btn" id="theme-light-btn">亮色</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Scenario Switcher -->
+  <section class="scenario-bar">
+    <div style="font-size:12.5px;font-weight:600;color:var(--fg);">
+      👇 点击切换 4 种状态（全部固定 5 行实时终端内容），或直接用鼠标拖动下方画中画卡片：
+    </div>
+    <div class="scenario-btns">
+      <button type="button" class="scene-btn active" data-scene="working">
+        <span class="scene-dot" style="background:var(--accent)"></span>
+        1. 实时流式盯盘 (Working · 5行滚动输出)
+      </button>
+      <button type="button" class="scene-btn" data-scene="needsInput">
+        <span class="scene-dot" style="background:var(--amber)"></span>
+        2. 突发待确认 (Confirm · 5行命令与选项)
+      </button>
+      <button type="button" class="scene-btn" data-scene="completed">
+        <span class="scene-dot" style="background:var(--emerald)"></span>
+        3. 任务完成 (Done · 5行测试与变更摘要)
+      </button>
+      <button type="button" class="scene-btn" data-scene="stuck">
+        <span class="scene-dot" style="background:var(--danger)"></span>
+        4. 长时卡住 (Stuck · 5行阻塞上下文)
+      </button>
+    </div>
+  </section>
+
+  <!-- Simulated macOS Screen -->
+  <section class="macos-screen" id="macos-screen">
+    <!-- Top Menu Bar -->
+    <div class="macos-menubar">
+      <div class="menubar-left">
+        <span style="font-weight:700;"></span>
+        <span style="font-weight:700;">Xcode</span>
+        <span style="color:var(--fg-secondary)">File</span>
+        <span style="color:var(--fg-secondary)">Edit</span>
+        <span style="color:var(--fg-secondary)">View</span>
+        <span style="color:var(--fg-secondary)">Product</span>
+      </div>
+      <div class="menubar-right">
+        <canvas class="anim-badge" id="menubar-badge" data-state="idle" width="28" height="16" style="width:28px;height:16px;"></canvas>
+        <span style="opacity:0.75">Wi-Fi</span>
+        <span>周日 17:22</span>
+      </div>
+    </div>
+
+    <!-- 4 Magnetic Corner Guides (visible while dragging) -->
+    <div class="corner-guide guide-br" data-guide="br"></div>
+    <div class="corner-guide guide-tr" data-guide="tr"></div>
+    <div class="corner-guide guide-bl" data-guide="bl"></div>
+    <div class="corner-guide guide-tl" data-guide="tl"></div>
+
+    <!-- Simulated Fullscreen IDE in background -->
+    <div class="ide-workspace">
+      <div class="ide-sidebar">
+        <div style="font-weight:600;color:var(--fg);margin-bottom:4px;">AgentMeter</div>
+        <div class="ide-file">AgentMeterApp.swift</div>
+        <div class="ide-file active">AgentMeterPanel.swift</div>
+        <div class="ide-file">AgentMonitor.swift</div>
+        <div class="ide-file">FlatStyle.swift</div>
+      </div>
+      <div class="ide-editor">
+        <div class="ide-tabbar">
+          <span>Sources/AgentMeter/AgentMeterPanel.swift</span>
+          <span style="color:var(--emerald)">● 全部状态统一展示 5 行实时终端内容 · 高度恒定不跳动</span>
+        </div>
+        <div><span style="color:var(--fg-tertiary)">88</span> &nbsp;&nbsp;<span style="color:var(--accent)">struct</span> AgentPiPCardView: View {</div>
+        <div><span style="color:var(--fg-tertiary)">89</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--fg-tertiary)">// 恒定 5 行终端预览框，实时查看工具调用、Diff 与测试输出</span></div>
+        <div><span style="color:var(--fg-tertiary)">90</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--accent)">let</span> visibleLinesCount = <span style="color:var(--amber)">5</span></div>
+        <div><span style="color:var(--fg-tertiary)">91</span> &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--accent)">var</span> body: <span style="color:var(--accent)">some</span> View { ... }</div>
+        <div><span style="color:var(--fg-tertiary)">92</span> &nbsp;&nbsp;}</div>
+      </div>
+    </div>
+
+    <!-- Floating Picture-in-Picture (PiP) Session Card (Constant 5-Line Preview) -->
+    <div class="pip-window ghost-enabled" id="pip-window" title="可拖拽移动 · 双击标题栏折叠为迷你胶囊">
+      <!-- 1. Compact Single-Line Header -->
+      <div class="pip-header" id="pip-header">
+        <div class="pip-header-left">
+          <div class="pip-family-icon" id="pip-family-icon"></div>
+          <span class="pip-title" id="pip-title">Optimize lock-free work-stealing scheduler</span>
+          <span class="pip-host-tag">Rex · AgentMeter</span>
+        </div>
+
+        <div class="pip-header-right">
+          <canvas class="anim-badge" id="pip-badge-canvas" data-state="working" width="28" height="17" style="width:28px;height:17px;"></canvas>
+          <div class="pip-win-controls">
+            <button type="button" class="pip-ctrl-btn" id="pip-collapse-btn" title="折叠/展开为迷你胶囊">▁</button>
+            <button type="button" class="pip-ctrl-btn" id="pip-jump-btn" title="跳转到终端窗口">↗</button>
+            <button type="button" class="pip-ctrl-btn active-pin" id="pip-close-btn" title="取消钉住 (关闭画中画)">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Constant 5-Line Live Terminal Preview Well -->
+      <div class="pip-body-section">
+        <div class="pip-lines-box" id="pip-lines-box">
+          <!-- Always 5 lines populated by JS -->
+        </div>
+
+        <!-- Inline Reply Input inside PiP -->
+        <div class="pip-reply-row" id="pip-reply-row">
+          <span style="color:#e8825a;font-weight:700;">❯</span>
+          <input type="text" class="pip-reply-input" id="pip-reply-input" placeholder="直接向该会话发送或排队指令… (回车)" />
+          <button type="button" class="pip-reply-send" id="pip-reply-send">发送 ⏎</button>
+        </div>
+      </div>
+
+      <!-- 3. Bottom Telemetry & Action Bar -->
+      <div class="pip-footer-section" id="pip-footer-section">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Design Highlights -->
+  <section class="spec-grid">
+    <div class="spec-box">
+      <h3>1. 全状态统一 5 行实时流式输出</h3>
+      <p>无论是 <code>Working</code>、<code>Confirm</code>、<code>Done</code> 还是 <code>Stuck</code>，终端预览窗始终展示完整的 <strong>5 行最新上下文</strong>（包含正在执行的工具、代码 Diff 行、测试进度等），卡片高度恒定 <code>~142pt</code> 不跳动。</p>
+    </div>
+    <div class="spec-box">
+      <h3>2. 自由拖拽 + 四角磁吸 + 双击折叠</h3>
+      <p>鼠标拖动松手后自动丝滑吸附到最近的屏幕角落；<strong>双击卡片顶部</strong>可随时折叠成仅 <code>256×34pt</code> 的极简胶囊，有权限确认时自动展开回 5 行。</p>
+    </div>
+    <div class="spec-box">
+      <h3>3. 盯盘与控场二合一</h3>
+      <p>不仅能实时看 5 行终端滚动输出、Git Diff 和上下文占比，还能直接在画中画小窗里点 <strong><code>中断 ^C</code>、<code>/ 回复</code>、<code>允许 ⏎</code></strong>，或双指上滑收起。</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const STATE_PALETTE = {
+    working: {
+      dark: { primary: '#60a5fa', secondary: '#93c5fd', bg: '#101929', side: 'rgba(59,130,246,0.20)', border: 'rgba(96,165,250,0.48)' },
+      light: { primary: '#2563eb', secondary: '#3b82f6', bg: '#eff6ff', side: 'rgba(59,130,246,0.12)', border: 'rgba(37,99,235,0.32)' }
+    },
+    needsInput: {
+      dark: { primary: '#fde68a', secondary: '#fbbf24', bg: '#211809', side: 'rgba(245,158,11,0.24)', border: 'rgba(251,191,36,0.62)' },
+      light: { primary: '#b45309', secondary: '#d97706', bg: '#fffbeb', side: 'rgba(245,158,11,0.15)', border: 'rgba(217,119,6,0.40)' }
+    },
+    completed: {
+      dark: { primary: '#4ade80', secondary: '#86efac', bg: '#0b1e16', side: 'rgba(16,185,129,0.22)', border: 'rgba(74,222,128,0.50)' },
+      light: { primary: '#059669', secondary: '#10b981', bg: '#ecfdf5', side: 'rgba(16,185,129,0.12)', border: 'rgba(5,150,105,0.34)' }
+    },
+    stuck: {
+      dark: { primary: '#f87171', secondary: '#ef4444', bg: '#220d10', side: 'rgba(239,68,68,0.24)', border: 'rgba(248,113,113,0.58)' },
+      light: { primary: '#dc2626', secondary: '#ef4444', bg: '#fef2f2', side: 'rgba(239,68,68,0.14)', border: 'rgba(220,38,38,0.38)' }
+    },
+    idle: {
+      dark: { primary: '#94a3b8', secondary: '#cbd5e1', bg: '#141720', side: 'rgba(148,163,184,0.08)', border: 'rgba(255,255,255,0.18)' },
+      light: { primary: '#64748b', secondary: '#475569', bg: '#f1f5f9', side: 'rgba(100,116,139,0.06)', border: 'rgba(15,23,42,0.16)' }
+    }
+  };
+
+  const CLAUDE_SVG = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg>`;
+
+  // Every working frame has 5 rich lines of real-time terminal output
+  const STREAM_POOL = [
+    [
+      '⏺ Edit(Sources/AgentMeter/AgentMeterPanel.swift)',
+      '  @@ -1140,6 +1140,12 @@ struct AgentPiPCardView: View {',
+      '  - let maxVisibleLines = 3',
+      '  + let maxVisibleLines = 5 // Constant 5-line live terminal well',
+      '  Compiling AgentMeterPanel.swift (3/6)...'
+    ],
+    [
+      '⏺ Bash(swift test --filter AgentPiPControllerTests)',
+      '  Test Suite \'AgentPiPControllerTests\' started at 17:22:04.118',
+      '  ✓ testMagneticCornerSnapping passed (0.012 seconds)',
+      '  ✓ testFiveLineLiveStreamUpdate passed (0.019 seconds)',
+      '  Executed 6 tests, with 0 failures in 0.084 seconds'
+    ],
+    [
+      '⏺ Read(Sources/AgentMeter/AgentMeterPanelController.swift)',
+      '  Inspecting NSPanel .floating level & .canJoinAllSpaces behavior',
+      '  ✓ Verified non-activating window does not steal IDE focus',
+      '  ✓ Verified two-finger upward swipe gesture dismisses PiP',
+      '  Updating task progress (3/4 completed)...'
+    ]
+  ];
+
+  let currentScene = 'working';
+  let streamTick = 0;
+  let isCollapsedPill = false;
+
+  const pipWin = document.getElementById('pip-window');
+  const pipBadge = document.getElementById('pip-badge-canvas');
+  const menubarBadge = document.getElementById('menubar-badge');
+  const linesBox = document.getElementById('pip-lines-box');
+  const footerBox = document.getElementById('pip-footer-section');
+  document.getElementById('pip-family-icon').innerHTML = CLAUDE_SVG;
+
+  function isLight() {
+    return document.documentElement.getAttribute('data-theme') === 'light';
+  }
+
+  function renderPiPContent() {
+    pipWin.classList.remove('state-working', 'state-needsInput', 'state-completed', 'state-stuck');
+    pipWin.classList.add(`state-${currentScene}`);
+    pipBadge.dataset.state = currentScene;
+    menubarBadge.dataset.state = (currentScene === 'working') ? 'idle' : currentScene;
+
+    let lines = [];
+    if (currentScene === 'working') {
+      lines = STREAM_POOL[streamTick % STREAM_POOL.length];
+    } else if (currentScene === 'needsInput') {
+      if (isCollapsedPill) setCollapsedPill(false);
+      lines = [
+        '⏺ Bash(./scripts/build-app.sh && open "build/Agent Meter.app")',
+        '  Build release app bundle and relaunch AgentMeter',
+        'Do you want to proceed with running this command?',
+        '❯ 1. Yes, allow once',
+        '  2. Yes, and don\'t ask again in ~/code/AgentMeter'
+      ];
+    } else if (currentScene === 'completed') {
+      lines = [
+        '● Updated Sources/AgentMeter/AgentMeterPanel.swift (+148 -19)',
+        '● Updated Sources/AgentMeter/AgentMeterPanelController.swift (+84 -6)',
+        '✓ Build complete! (11.42s) · 0 warnings, 0 errors',
+        '✓ All 14 verification checks passed',
+        '› Ready for next prompt in ~/code/AgentMeter'
+      ];
+    } else if (currentScene === 'stuck') {
+      lines = [
+        '⏺ Bash(ssh prod-db@10.0.4.18 "sqlite3 /srv/app.db < migrate.sql")',
+        '  Connected to prod-db@10.0.4.18 (mux_client_request_session)',
+        '  Applying migration 0042_add_session_telemetry_index.sql...',
+        '  Waiting on exclusive table lock in sqlite3_step()...',
+        '⚠ No stdout activity for 32m 14s · check if process is stalled'
+      ];
+    }
+
+    linesBox.innerHTML = lines.map((line, i) => {
+      const trimmed = line.trim();
+      let cls = '';
+      if (i === 0 || trimmed.startsWith('❯') || trimmed.startsWith('✓') || trimmed.startsWith('⚠')) {
+        cls = 'primary';
+      } else if (trimmed.startsWith('+ ')) {
+        cls = 'diff-plus';
+      } else if (trimmed.startsWith('- ')) {
+        cls = 'diff-minus';
+      }
+      return `
+        <div class="pip-line ${cls}">
+          ${i === 0 ? `<span class="pip-sigil">${currentScene === 'needsInput' ? '❯' : '›'}</span>` : '<span style="width:9px;display:inline-block;flex-shrink:0;"></span>'}
+          <span>${line}</span>
+        </div>
+      `;
+    }).join('');
+
+    if (currentScene === 'needsInput') {
+      footerBox.innerHTML = `
+        <span style="color:var(--amber);font-weight:500;">● 等待权限确认</span>
+        <div class="pip-actions">
+          <button type="button" class="pip-btn allow" data-act="approve">允许 ⏎</button>
+          <button type="button" class="pip-btn" data-act="approve">2</button>
+          <button type="button" class="pip-btn" data-act="deny">拒绝 Esc</button>
+          <button type="button" class="pip-btn" data-act="reply">/</button>
+        </div>
+      `;
+    } else if (currentScene === 'working') {
+      footerBox.innerHTML = `
+        <div class="pip-telemetry">
+          <span>变更 <span style="color:var(--emerald)">+148</span> <span style="color:var(--danger)">-19</span></span>
+          <span>·</span>
+          <span>☑ 3/4</span>
+          <span>·</span>
+          <span>42%</span>
+        </div>
+        <div class="pip-actions">
+          <button type="button" class="pip-btn stop" data-act="deny">中断 ^C</button>
+          <button type="button" class="pip-btn" data-act="reply">/ 排队</button>
+        </div>
+      `;
+    } else if (currentScene === 'completed') {
+      footerBox.innerHTML = `
+        <div class="pip-telemetry">
+          <span style="color:var(--emerald)">✓ 已完成</span>
+          <span>·</span>
+          <span>变更 <span style="color:var(--emerald)">+148</span> <span style="color:var(--danger)">-19</span></span>
+          <span>·</span>
+          <span>缓存 4:48</span>
+        </div>
+        <div class="pip-actions">
+          <button type="button" class="pip-btn" data-act="reply">/ 继续对话</button>
+        </div>
+      `;
+    } else {
+      footerBox.innerHTML = `
+        <span style="color:var(--danger);font-weight:500;">⚠ 长时运行疑似卡住</span>
+        <div class="pip-actions">
+          <button type="button" class="pip-btn stop" data-act="deny">中断 ^C</button>
+          <button type="button" class="pip-btn" data-act="reply">/</button>
+        </div>
+      `;
+    }
+
+    footerBox.querySelectorAll('[data-act]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const act = btn.dataset.act;
+        if (act === 'approve') selectScene('working');
+        else if (act === 'deny') selectScene('completed');
+        else if (act === 'reply') {
+          const row = document.getElementById('pip-reply-row');
+          row.classList.toggle('open');
+          if (row.classList.contains('open')) {
+            document.getElementById('pip-reply-input').focus();
+          }
+        }
+      });
+    });
+  }
+
+  function setCollapsedPill(collapsed) {
+    isCollapsedPill = collapsed;
+    pipWin.classList.toggle('collapsed-pill', collapsed);
+    document.querySelectorAll('[data-pipmode]').forEach(b => {
+      b.classList.toggle('active', (b.dataset.pipmode === 'pill') === collapsed);
+    });
+  }
+
+  function snapToCorner(corner) {
+    pipWin.style.left = '';
+    pipWin.style.top = '';
+    pipWin.style.right = '';
+    pipWin.style.bottom = '';
+
+    if (corner === 'br') {
+      pipWin.style.right = '22px';
+      pipWin.style.bottom = '20px';
+    } else if (corner === 'tr') {
+      pipWin.style.right = '22px';
+      pipWin.style.top = '44px';
+    } else if (corner === 'bl') {
+      pipWin.style.left = '22px';
+      pipWin.style.bottom = '20px';
+    } else if (corner === 'tl') {
+      pipWin.style.left = '22px';
+      pipWin.style.top = '44px';
+    }
+
+    document.querySelectorAll('[data-corner]').forEach(b => {
+      b.classList.toggle('active', b.dataset.corner === corner);
+    });
+  }
+
+  function selectScene(scene) {
+    currentScene = scene;
+    document.querySelectorAll('.scene-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.scene === scene);
+    });
+    renderPiPContent();
+  }
+
+  // Interactive Dragging + Magnetic Corner Snapping inside macOS Screen
+  const screenEl = document.getElementById('macos-screen');
+  let dragState = null;
+
+  pipWin.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    const screenRect = screenEl.getBoundingClientRect();
+    const winRect = pipWin.getBoundingClientRect();
+    dragState = {
+      offsetX: e.clientX - winRect.left,
+      offsetY: e.clientY - winRect.top,
+      screenRect
+    };
+    pipWin.style.right = 'auto';
+    pipWin.style.bottom = 'auto';
+    pipWin.style.left = `${winRect.left - screenRect.left}px`;
+    pipWin.style.top = `${winRect.top - screenRect.top}px`;
+    pipWin.classList.add('dragging-now');
+    screenEl.classList.add('dragging');
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragState) return;
+    const { offsetX, offsetY, screenRect } = dragState;
+    const w = pipWin.offsetWidth;
+    const h = pipWin.offsetHeight;
+    const x = Math.max(12, Math.min(screenRect.width - w - 12, e.clientX - screenRect.left - offsetX));
+    const y = Math.max(36, Math.min(screenRect.height - h - 12, e.clientY - screenRect.top - offsetY));
+    pipWin.style.left = `${x}px`;
+    pipWin.style.top = `${y}px`;
+
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const nearest = (cx < screenRect.width / 2)
+      ? (cy < screenRect.height / 2 ? 'tl' : 'bl')
+      : (cy < screenRect.height / 2 ? 'tr' : 'br');
+
+    document.querySelectorAll('.corner-guide').forEach(g => {
+      g.classList.toggle('active-snap', g.dataset.guide === nearest);
+    });
+    dragState.nearestCorner = nearest;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragState) return;
+    const targetCorner = dragState.nearestCorner || 'br';
+    dragState = null;
+    pipWin.classList.remove('dragging-now');
+    screenEl.classList.remove('dragging');
+    document.querySelectorAll('.corner-guide').forEach(g => g.classList.remove('active-snap'));
+    snapToCorner(targetCorner);
+  });
+
+  // Double-click header to toggle collapsed pill mode
+  document.getElementById('pip-header').addEventListener('dblclick', () => {
+    setCollapsedPill(!isCollapsedPill);
+  });
+
+  document.getElementById('pip-collapse-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    setCollapsedPill(!isCollapsedPill);
+  });
+
+  document.getElementById('pip-reply-send').addEventListener('click', () => {
+    document.getElementById('pip-reply-row').classList.remove('open');
+    document.getElementById('pip-reply-input').value = '';
+    selectScene('working');
+  });
+
+  document.querySelectorAll('.scene-btn').forEach(btn => {
+    btn.addEventListener('click', () => selectScene(btn.dataset.scene));
+  });
+
+  document.querySelectorAll('[data-pipmode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setCollapsedPill(btn.dataset.pipmode === 'pill');
+    });
+  });
+
+  document.querySelectorAll('[data-corner]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      snapToCorner(btn.dataset.corner);
+    });
+  });
+
+  document.getElementById('ghost-toggle-btn').addEventListener('click', (e) => {
+    e.target.classList.toggle('active');
+    pipWin.classList.toggle('ghost-enabled', e.target.classList.contains('active'));
+  });
+
+  document.getElementById('theme-dark-btn').addEventListener('click', (e) => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    e.target.classList.add('active');
+    document.getElementById('theme-light-btn').classList.remove('active');
+  });
+
+  document.getElementById('theme-light-btn').addEventListener('click', (e) => {
+    document.documentElement.setAttribute('data-theme', 'light');
+    e.target.classList.add('active');
+    document.getElementById('theme-dark-btn').classList.remove('active');
+  });
+
+  // Periodically cycle 5-line streaming output in working mode
+  setInterval(() => {
+    if (currentScene === 'working') {
+      streamTick++;
+      renderPiPContent();
+    }
+  }, 2600);
+
+  function roundedRect(ctx, x, y, w, h, r) {
+    const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') ctx.roundRect(x, y, w, h, rr);
+    else {
+      ctx.moveTo(x + rr, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rr);
+      ctx.arcTo(x + w, y + h, x, y + h, rr);
+      ctx.arcTo(x, y + h, x, y, rr);
+      ctx.arcTo(x, y, x + w, y, rr);
+      ctx.closePath();
+    }
+  }
+
+  function renderBadgeCanvas(canvas, stateKey, t) {
+    const dpr = window.devicePixelRatio || 2;
+    const cssW = parseFloat(canvas.style.width) || 28;
+    const cssH = parseFloat(canvas.style.height) || 17;
+    const targetW = Math.round(cssW * dpr);
+    const targetH = Math.round(cssH * dpr);
+    if (canvas.width !== targetW || canvas.height !== targetH) {
+      canvas.width = targetW;
+      canvas.height = targetH;
+    }
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.scale(dpr, dpr);
+
+    const cfg = STATE_PALETTE[stateKey] || STATE_PALETTE.working;
+    const p = isLight() ? cfg.light : cfg.dark;
+    const s = cssH / 20.0;
+    const radius = 5.5 * s;
+
+    ctx.save();
+    roundedRect(ctx, 0.6, 0.6, cssW - 1.2, cssH - 1.2, radius);
+    ctx.clip();
+    ctx.fillStyle = p.bg;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const leftG = ctx.createLinearGradient(0, 0, cssW * 0.45, 0);
+    leftG.addColorStop(0, p.side);
+    leftG.addColorStop(1, 'transparent');
+    ctx.fillStyle = leftG;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const rightG = ctx.createLinearGradient(cssW, 0, cssW * 0.55, 0);
+    rightG.addColorStop(0, p.side);
+    rightG.addColorStop(1, 'transparent');
+    ctx.fillStyle = rightG;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const cx = cssW / 2;
+    const cy = cssH / 2;
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.fillStyle = p.primary;
+    ctx.strokeStyle = p.primary;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1.85;
+
+    if (stateKey === 'working') {
+      const lookX = Math.sin(t * 2.6) * 2.4;
+      const blinkCycle = (t * 0.85) % 1;
+      const blinkY = (blinkCycle > 0.90) ? Math.max(0.15, Math.abs((blinkCycle - 0.95) * 20)) : 1.0;
+      const ew = 3.0, eh = 5.0 * blinkY, gap = 3.2;
+      [-gap, gap].forEach(ox => {
+        roundedRect(ctx, ox + lookX - ew / 2, -eh / 2, ew, eh, 1.3);
+        ctx.fill();
+      });
+    } else if (stateKey === 'completed') {
+      const gap = 3.3;
+      [-gap, gap].forEach(ox => {
+        ctx.beginPath();
+        ctx.arc(ox, 1.1, 2.2, Math.PI * 1.15, Math.PI * 1.85, false);
+        ctx.stroke();
+      });
+    } else if (stateKey === 'stuck') {
+      ctx.globalAlpha = 0.65 + 0.35 * Math.sin(t * 5.0);
+      const gap = 3.5, r = 1.95;
+      [-gap, gap].forEach(ox => {
+        ctx.beginPath();
+        ctx.moveTo(ox - r, -r); ctx.lineTo(ox + r, r);
+        ctx.moveTo(ox + r, -r); ctx.lineTo(ox - r, r);
+        ctx.stroke();
+      });
+    } else {
+      const chX = -3.6;
+      ctx.beginPath();
+      ctx.moveTo(chX - 1.4, -2.5);
+      ctx.lineTo(chX + 1.3, 0);
+      ctx.lineTo(chX - 1.4, 2.5);
+      ctx.stroke();
+
+      ctx.globalAlpha = (stateKey === 'needsInput')
+        ? (0.2 + 0.8 * (0.5 + 0.5 * Math.sin(t * 9.5)))
+        : (0.2 + 0.7 * (0.5 + 0.5 * Math.sin(t * 2.2)));
+      ctx.strokeStyle = p.secondary;
+      ctx.beginPath();
+      ctx.moveTo(0.8, 2.4);
+      ctx.lineTo(4.8, 2.4);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    roundedRect(ctx, 0.6, 0.6, cssW - 1.2, cssH - 1.2, radius);
+    ctx.strokeStyle = p.border;
+    ctx.lineWidth = 1.15;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  renderPiPContent();
+
+  const start = performance.now();
+  function loop(now) {
+    const t = (now - start) / 1000;
+    document.querySelectorAll('.anim-badge').forEach(c => {
+      renderBadgeCanvas(c, c.dataset.state || 'working', t);
+    });
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

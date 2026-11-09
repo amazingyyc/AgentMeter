@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IOKit.pwr_mgt
 import Observation
 import ServiceManagement
 
@@ -7,7 +8,15 @@ enum MenuBarVisualState: Equatable {
     case idle(onlineCount: Int)
     case working(count: Int)
     case needsInput(count: Int)
+    case stuck(count: Int)
     case unreadCompleted(count: Int)
+}
+
+enum PiPCorner: String, CaseIterable, Sendable {
+    case bottomRight = "br"
+    case topRight = "tr"
+    case bottomLeft = "bl"
+    case topLeft = "tl"
 }
 
 @MainActor @Observable
@@ -53,15 +62,33 @@ final class AgentMeterModel {
             applyLaunchAtLogin(launchAtLoginEnabled)
         }
     }
+    var preventSleepWhileWorking: Bool {
+        didSet {
+            UserDefaults.standard.set(preventSleepWhileWorking, forKey: "preventSleepWhileWorking")
+            updateKeepAwakeAssertion()
+        }
+    }
+    var isKeepAwakeAssertionActive = false
+    var dismissedMiniConfirmTokens: Set<String> = []
+    var pinnedPiPActivityID: String? = nil
+    var isPiPCollapsedPill = false
+    var pipCorner: PiPCorner {
+        didSet {
+            UserDefaults.standard.set(pipCorner.rawValue, forKey: "pipCorner")
+        }
+    }
     var appearanceMode: AppearanceMode {
         didSet {
             UserDefaults.standard.set(appearanceMode.rawValue, forKey: "appearanceMode")
             applyAppearance()
+            onMenuBarStateChanged?()
+            onPiPStateChanged?()
         }
     }
     var language: AppLanguage {
         didSet {
             UserDefaults.standard.set(language.rawValue, forKey: "appLanguage")
+            onMenuBarStateChanged?()
             Task { @MainActor in await pollAgents() }
         }
     }
@@ -73,7 +100,12 @@ final class AgentMeterModel {
     @ObservationIgnored private var pausedQueueKeys: Set<String> = []
     @ObservationIgnored private var dispatchingQueueKeys: Set<String> = []
     @ObservationIgnored private var hasSeededDemoQueue = false
+    @ObservationIgnored private var hasDemoConfirmItem = false
+    @ObservationIgnored private var sleepAssertionID: IOPMAssertionID = IOPMAssertionID(0)
     @ObservationIgnored var onGlobalHotkeysPreferenceChanged: (@MainActor (Bool) -> Void)?
+    @ObservationIgnored var onMenuBarStateChanged: (@MainActor () -> Void)?
+    @ObservationIgnored var onMiniConfirmStateChanged: (@MainActor () -> Void)?
+    @ObservationIgnored var onPiPStateChanged: (@MainActor () -> Void)?
 
     init() {
         let defaults = UserDefaults.standard
@@ -81,6 +113,7 @@ final class AgentMeterModel {
         language = AppLanguage(rawValue: defaults.string(forKey: "appLanguage") ?? "") ?? .english
         preferredLaunchFamily = AgentFamily(rawValue: defaults.string(forKey: "preferredLaunchFamily") ?? "") ?? .claude
         preferredTerminalHost = PreferredTerminalHost(rawValue: defaults.string(forKey: "preferredTerminalHost") ?? "") ?? .auto
+        pipCorner = PiPCorner(rawValue: defaults.string(forKey: "pipCorner") ?? "") ?? .bottomRight
         if let savedCmds = defaults.dictionary(forKey: "customLaunchCommands") as? [String: String] {
             customLaunchCommands = savedCmds
         }
@@ -99,6 +132,12 @@ final class AgentMeterModel {
             defaults.set(true, forKey: "launchAtLoginEnabled")
         } else {
             launchAtLoginEnabled = defaults.bool(forKey: "launchAtLoginEnabled")
+        }
+        if defaults.object(forKey: "preventSleepWhileWorking") == nil {
+            preventSleepWhileWorking = true
+            defaults.set(true, forKey: "preventSleepWhileWorking")
+        } else {
+            preventSleepWhileWorking = defaults.bool(forKey: "preventSleepWhileWorking")
         }
         applyLaunchAtLogin(launchAtLoginEnabled)
     }
@@ -171,12 +210,21 @@ final class AgentMeterModel {
         agentActivities.filter { $0.status == .needsInput }.count
     }
 
+    var activeAgentStuckCount: Int {
+        let now = Date()
+        return agentActivities.filter { $0.status == .working && $0.isLongRunningWorking(now: now) }.count
+    }
+
     var unreadCompletionCount: Int {
         agentActivities.filter { $0.isUnreadCompletion }.count
     }
 
+    var completedSessionCount: Int {
+        agentActivities.filter { $0.status == .completed }.count
+    }
+
     var showMenuBarCompletionDot: Bool {
-        (hasUnseenMenuBarCompletion && unreadCompletionCount > 0) || activeAgentNeedsInputCount > 0
+        (hasUnseenMenuBarCompletion && unreadCompletionCount > 0) || activeAgentNeedsInputCount > 0 || activeAgentStuckCount > 0
     }
 
     var menuBarVisualState: MenuBarVisualState {
@@ -184,10 +232,105 @@ final class AgentMeterModel {
         if needsInput > 0 {
             return .needsInput(count: needsInput)
         }
-        if hasUnseenMenuBarCompletion && unreadCompletionCount > 0 {
-            return .unreadCompleted(count: unreadCompletionCount)
+        let stuck = activeAgentStuckCount
+        if stuck > 0 {
+            return .stuck(count: stuck)
+        }
+        let completed = completedSessionCount
+        if completed > 0 {
+            return .unreadCompleted(count: completed)
         }
         return .idle(onlineCount: agentActivities.count)
+    }
+
+    func miniConfirmToken(for item: AgentActivityItem) -> String {
+        let lastLine = item.terminalPreviewLines.last ?? ""
+        return "\(item.id)|\(lastLine)"
+    }
+
+    var activeMiniConfirmItem: AgentActivityItem? {
+        guard !isPanelOpen else { return nil }
+        return agentActivities.first { item in
+            guard item.status == .needsInput else { return false }
+            if item.id == pinnedPiPActivityID { return false }
+            return !dismissedMiniConfirmTokens.contains(miniConfirmToken(for: item))
+        }
+    }
+
+    func dismissMiniConfirmCard(for item: AgentActivityItem) {
+        dismissedMiniConfirmTokens.insert(miniConfirmToken(for: item))
+        onMiniConfirmStateChanged?()
+    }
+
+    var activePiPItem: AgentActivityItem? {
+        guard let pinnedID = pinnedPiPActivityID else { return nil }
+        return agentActivities.first { $0.id == pinnedID }
+    }
+
+    func isSessionPinnedInPiP(_ item: AgentActivityItem) -> Bool {
+        pinnedPiPActivityID == item.id
+    }
+
+    func togglePiPSession(_ item: AgentActivityItem) {
+        if pinnedPiPActivityID == item.id {
+            pinnedPiPActivityID = nil
+            isPiPCollapsedPill = false
+        } else {
+            pinnedPiPActivityID = item.id
+            isPiPCollapsedPill = false
+        }
+        onPiPStateChanged?()
+        onMiniConfirmStateChanged?()
+    }
+
+    func closePiP() {
+        guard pinnedPiPActivityID != nil else { return }
+        pinnedPiPActivityID = nil
+        isPiPCollapsedPill = false
+        onPiPStateChanged?()
+        onMiniConfirmStateChanged?()
+    }
+
+    func togglePiPCollapsedPill() {
+        isPiPCollapsedPill.toggle()
+        onPiPStateChanged?()
+    }
+
+    func updateKeepAwakeAssertion() {
+        let now = Date()
+        let hasActiveNonStuckWorking = agentActivities.contains { item in
+            item.status == .working && !item.isLongRunningWorking(now: now)
+        }
+        let shouldHoldAssertion = preventSleepWhileWorking && !isSleeping && hasActiveNonStuckWorking
+
+        if shouldHoldAssertion {
+            if sleepAssertionID == 0 {
+                let reason = "AgentMeter: Active CLI Agent Task Running" as CFString
+                var newID: IOPMAssertionID = 0
+                let kr = IOPMAssertionCreateWithName(
+                    kIOPMAssertionTypePreventUserIdleSystemSleep as CFString,
+                    IOPMAssertionLevel(kIOPMAssertionLevelOn),
+                    reason,
+                    &newID
+                )
+                if kr == kIOReturnSuccess {
+                    sleepAssertionID = newID
+                    isKeepAwakeAssertionActive = true
+                }
+            }
+        } else {
+            releaseKeepAwakeAssertion()
+        }
+    }
+
+    func releaseKeepAwakeAssertion() {
+        if sleepAssertionID != 0 {
+            IOPMAssertionRelease(sleepAssertionID)
+            sleepAssertionID = 0
+        }
+        if isKeepAwakeAssertionActive {
+            isKeepAwakeAssertionActive = false
+        }
     }
 
     func markAllAsRead() {
@@ -196,14 +339,18 @@ final class AgentMeterModel {
         }
         hasUnseenMenuBarCompletion = false
         agentTracker.clearUnreadCompletions()
+        onMenuBarStateChanged?()
     }
 
     func menuTitle() -> String {
         let en = language == .english
         let needsInput = activeAgentNeedsInputCount
+        let stuck = activeAgentStuckCount
         let working = activeAgentWorkingCount
         if needsInput > 0 {
             return en ? "Agent · \(needsInput) Confirm" : "Agent · \(needsInput) 待确认"
+        } else if stuck > 0 {
+            return en ? "Agent · \(stuck) Stalled" : "Agent · \(stuck) 长时卡住"
         } else if working > 0 {
             return en ? "Agent · \(working) Running" : "Agent · \(working) 运行中"
         } else if showMenuBarCompletionDot {
@@ -215,9 +362,45 @@ final class AgentMeterModel {
         }
     }
 
+    func makeDemoConfirmItem() -> AgentActivityItem {
+        let en = language == .english
+        return AgentActivityItem(
+            id: "demo-live-confirm",
+            family: .claude,
+            workspace: "AgentMeter",
+            cwdPath: "~/code/AgentMeter",
+            title: en ? "Run release build & verify IOKit assertion" : "编译打包并验证 IOKit 电源保活断言",
+            status: .needsInput,
+            isUnreadCompletion: false,
+            detail: en ? "Awaiting confirmation" : "等待确认",
+            updatedAt: Date().addingTimeInterval(-6),
+            pid: nil,
+            tty: nil,
+            rexPane: nil,
+            terminalPreviewLines: [
+                "⏺ Bash(./scripts/build-app.sh && pmset -g assertions | grep AgentMeter)",
+                "  Build release app bundle and verify PreventUserIdleSystemSleep",
+                "Do you want to proceed with running this command?",
+                "❯ 1. Yes, allow once",
+                "  2. Yes, and don't ask again for ./scripts/build-app.sh in ~/code/AgentMeter",
+            ],
+            contextPercentUsed: 42,
+            gitDiff: GitDiffSummary(changedFiles: 3, insertions: 148, deletions: 19),
+            gitBranch: "main"
+        )
+    }
+
     func start() {
         guard !started else { return }
         started = true
+        if ProcessInfo.processInfo.arguments.contains("--demo-confirm") {
+            hasDemoConfirmItem = true
+            agentActivities = [makeDemoConfirmItem()]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                self?.onMenuBarStateChanged?()
+                self?.onMiniConfirmStateChanged?()
+            }
+        }
         if ProcessInfo.processInfo.arguments.contains("--demo") {
             isDemo = true
             Task { @MainActor in await pollAgents() }
@@ -229,15 +412,20 @@ final class AgentMeterModel {
     func panelDidOpen() {
         isPanelOpen = true
         hasUnseenMenuBarCompletion = false
+        onMenuBarStateChanged?()
+        onMiniConfirmStateChanged?()
         Task { @MainActor in await pollAgents() }
     }
 
     func panelDidClose() {
         isPanelOpen = false
+        onMenuBarStateChanged?()
+        onMiniConfirmStateChanged?()
     }
 
     func sleep() {
         isSleeping = true
+        releaseKeepAwakeAssertion()
         agentTimerTask?.cancel()
         agentTimerTask = nil
     }
@@ -254,6 +442,8 @@ final class AgentMeterModel {
         if !agentActivities.contains(where: { $0.isUnreadCompletion }) {
             hasUnseenMenuBarCompletion = false
         }
+        onMenuBarStateChanged?()
+        onMiniConfirmStateChanged?()
         Task { @MainActor in
             _ = await agentTracker.jumpToSession(item)
         }
@@ -273,6 +463,7 @@ final class AgentMeterModel {
         let previousActivities = agentActivities
         let previousUnseenCompletion = hasUnseenMenuBarCompletion
         let en = language == .english
+        dismissedMiniConfirmTokens.remove(miniConfirmToken(for: item))
         if let idx = agentActivities.firstIndex(where: { $0.id == item.id }) {
             agentActivities[idx].isUnreadCompletion = false
             switch choice {
@@ -288,6 +479,19 @@ final class AgentMeterModel {
         if !agentActivities.contains(where: { $0.isUnreadCompletion }) && activeAgentNeedsInputCount == 0 {
             hasUnseenMenuBarCompletion = false
         }
+        if item.id == "demo-live-confirm" {
+            hasDemoConfirmItem = false
+            agentActivities.removeAll { $0.id == "demo-live-confirm" }
+            updateKeepAwakeAssertion()
+            onMenuBarStateChanged?()
+            onMiniConfirmStateChanged?()
+            onPiPStateChanged?()
+            return
+        }
+        updateKeepAwakeAssertion()
+        onMenuBarStateChanged?()
+        onMiniConfirmStateChanged?()
+        onPiPStateChanged?()
         Task { @MainActor in
             let ok = await agentTracker.respondToPermissionPrompt(item, choice: choice)
             if !isDemo {
@@ -379,6 +583,7 @@ final class AgentMeterModel {
         let key = queueKey(for: item)
         pausedQueueKeys.remove(key)
         dispatchingQueueKeys.insert(key)
+        dismissedMiniConfirmTokens.remove(miniConfirmToken(for: item))
         let previousActivities = agentActivities
         let previousUnseenCompletion = hasUnseenMenuBarCompletion
         let en = language == .english
@@ -392,6 +597,19 @@ final class AgentMeterModel {
         if !agentActivities.contains(where: { $0.isUnreadCompletion }) && activeAgentNeedsInputCount == 0 {
             hasUnseenMenuBarCompletion = false
         }
+        if item.id == "demo-live-confirm" {
+            hasDemoConfirmItem = false
+            agentActivities.removeAll { $0.id == "demo-live-confirm" }
+            updateKeepAwakeAssertion()
+            onMenuBarStateChanged?()
+            onMiniConfirmStateChanged?()
+            onPiPStateChanged?()
+            return
+        }
+        updateKeepAwakeAssertion()
+        onMenuBarStateChanged?()
+        onMiniConfirmStateChanged?()
+        onPiPStateChanged?()
         Task { @MainActor in
             defer { dispatchingQueueKeys.remove(key) }
             let ok = await agentTracker.sendInlinePrompt(item, text: trimmed)
@@ -411,6 +629,7 @@ final class AgentMeterModel {
     func interruptAgentSession(_ item: AgentActivityItem) {
         let key = queueKey(for: item)
         pausedQueueKeys.insert(key)
+        dismissedMiniConfirmTokens.remove(miniConfirmToken(for: item))
         let previousActivities = agentActivities
         let previousUnseenCompletion = hasUnseenMenuBarCompletion
         let en = language == .english
@@ -424,6 +643,10 @@ final class AgentMeterModel {
         if !agentActivities.contains(where: { $0.isUnreadCompletion }) && activeAgentNeedsInputCount == 0 {
             hasUnseenMenuBarCompletion = false
         }
+        updateKeepAwakeAssertion()
+        onMenuBarStateChanged?()
+        onMiniConfirmStateChanged?()
+        onPiPStateChanged?()
         Task { @MainActor in
             let ok = await agentTracker.interruptSession(item)
             if !isDemo {
@@ -443,12 +666,21 @@ final class AgentMeterModel {
         let key = queueKey(for: item)
         promptQueues.removeValue(forKey: key)
         pausedQueueKeys.remove(key)
+        dismissedMiniConfirmTokens.remove(miniConfirmToken(for: item))
         let previousActivities = agentActivities
         let previousUnseenCompletion = hasUnseenMenuBarCompletion
+        if pinnedPiPActivityID == item.id {
+            pinnedPiPActivityID = nil
+            isPiPCollapsedPill = false
+        }
         agentActivities.removeAll { $0.id == item.id }
         if !agentActivities.contains(where: { $0.isUnreadCompletion }) {
             hasUnseenMenuBarCompletion = false
         }
+        updateKeepAwakeAssertion()
+        onMenuBarStateChanged?()
+        onMiniConfirmStateChanged?()
+        onPiPStateChanged?()
         Task { @MainActor in
             let ok = await agentTracker.closeSession(item)
             if !isDemo {
@@ -618,7 +850,7 @@ final class AgentMeterModel {
             await pollAgents()
             while !Task.isCancelled {
                 let interval: Double = {
-                    if isPanelOpen {
+                    if isPanelOpen || pinnedPiPActivityID != nil {
                         return 1.8
                     } else if activeAgentWorkingCount > 0 {
                         return 2.2
@@ -638,7 +870,11 @@ final class AgentMeterModel {
 
     private func pollAgents() async {
         let result = await agentTracker.poll(isDemo: isDemo)
-        agentActivities = result.items
+        var items = result.items
+        if hasDemoConfirmItem {
+            items.insert(makeDemoConfirmItem(), at: 0)
+        }
+        agentActivities = items
         if isDemo, !hasSeededDemoQueue, let demoCodex = result.items.first(where: { $0.id == "demo-codex" }) {
             hasSeededDemoQueue = true
             let en = language == .english
@@ -671,6 +907,29 @@ final class AgentMeterModel {
         if !agentActivities.contains(where: { $0.isUnreadCompletion }) {
             hasUnseenMenuBarCompletion = false
         }
+        if !dismissedMiniConfirmTokens.isEmpty {
+            let activeTokens = Set(
+                items
+                    .filter { $0.status == .needsInput }
+                    .map { miniConfirmToken(for: $0) }
+            )
+            dismissedMiniConfirmTokens.formIntersection(activeTokens)
+        }
+        if let pinnedID = pinnedPiPActivityID,
+           !items.contains(where: { $0.id == pinnedID }) {
+            pinnedPiPActivityID = nil
+            isPiPCollapsedPill = false
+        }
+        if let pinnedID = pinnedPiPActivityID,
+           let pinnedItem = items.first(where: { $0.id == pinnedID }),
+           pinnedItem.status == .needsInput,
+           isPiPCollapsedPill {
+            isPiPCollapsedPill = false
+        }
+        updateKeepAwakeAssertion()
+        onMenuBarStateChanged?()
+        onMiniConfirmStateChanged?()
+        onPiPStateChanged?()
         flushReadyPromptQueues()
     }
 

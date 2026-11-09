@@ -11,24 +11,20 @@ struct AgentMeterApp: App {
             AgentMeterPanel(model: model)
                 .frame(width: 416, height: min(560, max(300, (NSScreen.main?.visibleFrame.height ?? 700) - 24)))
         } label: {
-            Image(
-                nsImage: Self.menuBarIcon(
-                    visualState: model.menuBarVisualState
-                )
-            )
-            .accessibilityLabel(Self.accessibilityLabel(for: model.menuBarVisualState, language: model.language))
-            .help(model.menuTitle())
+            MenuBarStatusLabel(model: model)
         }
         .menuBarExtraStyle(.window)
     }
 
-    private static func accessibilityLabel(for state: MenuBarVisualState, language: AppLanguage) -> String {
+    fileprivate static func accessibilityLabel(for state: MenuBarVisualState, language: AppLanguage) -> String {
         let en = language == .english
         switch state {
         case .needsInput(let count):
             return en ? "Agent Activity (\(count) waiting for confirmation)" : "Agent 动态（\(count) 个会话等待确认）"
+        case .stuck(let count):
+            return en ? "Agent Activity (\(count) stalled)" : "Agent 动态（\(count) 个会话长时卡住）"
         case .unreadCompleted(let count):
-            return en ? "Agent Activity (\(count) newly completed)" : "Agent 动态（\(count) 个新完成的任务）"
+            return en ? "Agent Activity (\(count) newly completed)" : "Agent 动态（\(count) 个已完成的任务）"
         case .working(let count):
             return en ? "Agent Activity (\(count) running)" : "Agent 动态（\(count) 个任务运行中）"
         case .idle(let online):
@@ -40,92 +36,239 @@ struct AgentMeterApp: App {
         }
     }
 
-    private static func menuBarIcon(visualState: MenuBarVisualState) -> NSImage {
-        let hasBadge: Bool = {
+    fileprivate static func menuBarIcon(visualState: MenuBarVisualState) -> NSImage {
+        let countNumber: Int? = {
             switch visualState {
-            case .needsInput, .unreadCompleted:
-                return true
+            case .needsInput(let count), .stuck(let count), .unreadCompleted(let count):
+                return max(1, count)
             case .working, .idle:
-                return false
+                return nil
             }
         }()
 
-        let size = NSSize(width: 22, height: 18)
-        let image = NSImage(size: size, flipped: false) { rect in
+        let countText = countNumber.map { "\($0)" }
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11.5, weight: .bold)
+        let textWidth: CGFloat = {
+            guard let countText else { return 0 }
+            let attr: [NSAttributedString.Key: Any] = [.font: font]
+            return ceil((countText as NSString).size(withAttributes: attr).width)
+        }()
+
+        let badgeW: CGFloat = 28.0
+        let badgeH: CGFloat = 16.0
+        let totalW: CGFloat = countText != nil ? (badgeW + 4.5 + textWidth + 2.0) : (badgeW + 2.0)
+        let totalH: CGFloat = 18.0
+
+        let image = NSImage(size: NSSize(width: totalW, height: totalH), flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             ctx.setAllowsAntialiasing(true)
             ctx.setShouldAntialias(true)
 
-            let fgColor = NSColor.labelColor.cgColor
-            let offsetX: CGFloat = hasBadge ? 1.8 : 3.2
+            let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 
-            // Minimalist terminal chevron `>`
-            ctx.beginPath()
-            ctx.move(to: CGPoint(x: offsetX, y: 12.6))
-            ctx.addLine(to: CGPoint(x: offsetX + 3.8, y: 9.0))
-            ctx.addLine(to: CGPoint(x: offsetX, y: 5.4))
-            ctx.setLineWidth(1.85)
+            func srgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1.0) -> NSColor {
+                NSColor(srgbRed: r / 255.0, green: g / 255.0, blue: b / 255.0, alpha: a)
+            }
+
+            let primaryColor: NSColor
+            let secondaryColor: NSColor
+            let bgTint: NSColor
+            let sideGlow: NSColor
+            let borderColor: NSColor
+
+            switch (visualState, isDark) {
+            case (.needsInput, true):
+                primaryColor = srgb(253, 230, 138)
+                secondaryColor = srgb(251, 191, 36)
+                bgTint = srgb(33, 24, 9)
+                sideGlow = srgb(245, 158, 11, 0.26)
+                borderColor = srgb(251, 191, 36, 0.68)
+            case (.needsInput, false):
+                primaryColor = srgb(180, 83, 9)
+                secondaryColor = srgb(217, 119, 6)
+                bgTint = srgb(255, 251, 235)
+                sideGlow = srgb(245, 158, 11, 0.16)
+                borderColor = srgb(217, 119, 6, 0.45)
+
+            case (.unreadCompleted, true):
+                primaryColor = srgb(74, 222, 128)
+                secondaryColor = srgb(134, 239, 172)
+                bgTint = srgb(11, 30, 22)
+                sideGlow = srgb(16, 185, 129, 0.24)
+                borderColor = srgb(74, 222, 128, 0.56)
+            case (.unreadCompleted, false):
+                primaryColor = srgb(5, 150, 105)
+                secondaryColor = srgb(16, 185, 129)
+                bgTint = srgb(236, 253, 245)
+                sideGlow = srgb(16, 185, 129, 0.14)
+                borderColor = srgb(5, 150, 105, 0.38)
+
+            case (.stuck, true):
+                primaryColor = srgb(248, 113, 113)
+                secondaryColor = srgb(239, 68, 68)
+                bgTint = srgb(34, 13, 16)
+                sideGlow = srgb(239, 68, 68, 0.26)
+                borderColor = srgb(248, 113, 113, 0.64)
+            case (.stuck, false):
+                primaryColor = srgb(220, 38, 38)
+                secondaryColor = srgb(239, 68, 68)
+                bgTint = srgb(254, 242, 242)
+                sideGlow = srgb(239, 68, 68, 0.15)
+                borderColor = srgb(220, 38, 38, 0.42)
+
+            case (.working, true), (.idle, true):
+                primaryColor = srgb(148, 163, 184)
+                secondaryColor = srgb(203, 213, 225)
+                bgTint = srgb(20, 23, 32)
+                sideGlow = srgb(148, 163, 184, 0.10)
+                borderColor = srgb(255, 255, 255, 0.20)
+            case (.working, false), (.idle, false):
+                primaryColor = srgb(100, 116, 139)
+                secondaryColor = srgb(71, 85, 105)
+                bgTint = srgb(241, 245, 249)
+                sideGlow = srgb(100, 116, 139, 0.08)
+                borderColor = srgb(15, 23, 42, 0.18)
+            }
+
+            let badgeRect = CGRect(x: 1.0, y: (totalH - badgeH) / 2.0, width: badgeW, height: badgeH)
+            let cornerRadius: CGFloat = 4.5
+            let badgePath = CGPath(roundedRect: badgeRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+
+            // 1. Clipped badge background + side glow + glyph
+            ctx.saveGState()
+            ctx.addPath(badgePath)
+            ctx.clip()
+
+            ctx.setFillColor(bgTint.cgColor)
+            ctx.fill(badgeRect)
+
+            if let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+               let grad = CGGradient(colorsSpace: colorSpace, colors: [sideGlow.cgColor, NSColor.clear.cgColor] as CFArray, locations: [0, 1]) {
+                ctx.drawLinearGradient(
+                    grad,
+                    start: CGPoint(x: badgeRect.minX, y: badgeRect.midY),
+                    end: CGPoint(x: badgeRect.minX + badgeW * 0.45, y: badgeRect.midY),
+                    options: []
+                )
+                ctx.drawLinearGradient(
+                    grad,
+                    start: CGPoint(x: badgeRect.maxX, y: badgeRect.midY),
+                    end: CGPoint(x: badgeRect.maxX - badgeW * 0.45, y: badgeRect.midY),
+                    options: []
+                )
+            }
+
+            let cx = badgeRect.midX
+            let cy = badgeRect.midY
+            let scale: CGFloat = badgeH / 20.0
+
+            ctx.saveGState()
+            ctx.translateBy(x: cx, y: cy)
+            ctx.scaleBy(x: scale, y: scale)
             ctx.setLineCap(.round)
             ctx.setLineJoin(.round)
-            ctx.setStrokeColor(fgColor)
-            ctx.strokePath()
+            ctx.setLineWidth(1.85)
 
-            // Three clean static horizontal meter bars
-            let barX = offsetX + 6.4
-            let bars: [(y: CGFloat, width: CGFloat, alpha: CGFloat)] = [
-                (12.2, 7.6, 1.0),
-                (9.0, 5.4, 0.85),
-                (5.8, 3.6, 0.55),
-            ]
-            for bar in bars {
+            switch visualState {
+            case .unreadCompleted:
+                // Happy eyes `^ ^` (in non-flipped coordinates, y+ is up)
+                ctx.setStrokeColor(primaryColor.cgColor)
+                let gap: CGFloat = 3.3
+                for ox in [-gap, gap] {
+                    ctx.beginPath()
+                    ctx.move(to: CGPoint(x: ox - 2.1, y: -1.1))
+                    ctx.addQuadCurve(to: CGPoint(x: ox + 2.1, y: -1.1), control: CGPoint(x: ox, y: 2.2))
+                    ctx.strokePath()
+                }
+
+            case .stuck:
+                // Red dizzy eyes `✕ ✕`
+                ctx.setStrokeColor(primaryColor.cgColor)
+                let gap: CGFloat = 3.5
+                let r: CGFloat = 1.95
+                for ox in [-gap, gap] {
+                    ctx.beginPath()
+                    ctx.move(to: CGPoint(x: ox - r, y: -r))
+                    ctx.addLine(to: CGPoint(x: ox + r, y: r))
+                    ctx.move(to: CGPoint(x: ox + r, y: -r))
+                    ctx.addLine(to: CGPoint(x: ox - r, y: r))
+                    ctx.strokePath()
+                }
+
+            case .needsInput, .working, .idle:
+                // Terminal prompt `>_` ( matching the top-right Idle / NeedsInput badge )
+                let chX: CGFloat = -3.6
+                ctx.setStrokeColor(primaryColor.cgColor)
                 ctx.beginPath()
-                ctx.move(to: CGPoint(x: barX, y: bar.y))
-                ctx.addLine(to: CGPoint(x: barX + bar.width, y: bar.y))
-                ctx.setLineWidth(1.85)
-                ctx.setLineCap(.round)
-                ctx.setStrokeColor(NSColor.labelColor.withAlphaComponent(bar.alpha).cgColor)
+                ctx.move(to: CGPoint(x: chX - 1.4, y: 2.5))
+                ctx.addLine(to: CGPoint(x: chX + 1.3, y: 0))
+                ctx.addLine(to: CGPoint(x: chX - 1.4, y: -2.5))
+                ctx.strokePath()
+
+                ctx.setStrokeColor(secondaryColor.cgColor)
+                ctx.beginPath()
+                ctx.move(to: CGPoint(x: 0.8, y: -2.4))
+                ctx.addLine(to: CGPoint(x: 4.8, y: -2.4))
                 ctx.strokePath()
             }
+            ctx.restoreGState()
+            ctx.restoreGState()
 
-            // State-specific bright dot badge
-            let dotColor: NSColor? = {
-                switch visualState {
-                case .needsInput:
-                    // Bright Amber-Orange dot for pending user confirmation
-                    return NSColor(srgbRed: 1.0, green: 0.62, blue: 0.12, alpha: 1.0)
-                case .unreadCompleted:
-                    // Bright Coral-Rose dot for unread task completion
-                    return NSColor(srgbRed: 1.0, green: 0.22, blue: 0.44, alpha: 1.0)
-                case .working, .idle:
-                    return nil
-                }
-            }()
+            // 2. Rounded border
+            let insetRect = badgeRect.insetBy(dx: 0.55, dy: 0.55)
+            let borderPath = CGPath(roundedRect: insetRect, cornerWidth: cornerRadius - 0.3, cornerHeight: cornerRadius - 0.3, transform: nil)
+            ctx.addPath(borderPath)
+            ctx.setStrokeColor(borderColor.cgColor)
+            ctx.setLineWidth(1.1)
+            ctx.strokePath()
 
-            if let dotColor {
-                let dotDiameter: CGFloat = 6.5
-                let dotRect = NSRect(
-                    x: rect.width - dotDiameter - 0.8,
-                    y: rect.height - dotDiameter - 1.8,
-                    width: dotDiameter,
-                    height: dotDiameter
+            // 3. Optional right-hand count number (ONLY for needsInput / unreadCompleted / stuck)
+            if let countText {
+                let numberColor: NSColor = {
+                    switch visualState {
+                    case .needsInput:
+                        return secondaryColor
+                    case .unreadCompleted, .stuck, .working, .idle:
+                        return primaryColor
+                    }
+                }()
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: numberColor,
+                ]
+                let strSize = (countText as NSString).size(withAttributes: attrs)
+                let textRect = NSRect(
+                    x: badgeRect.maxX + 4.5,
+                    y: (totalH - strSize.height) / 2.0 - 0.3,
+                    width: strSize.width + 2.0,
+                    height: strSize.height
                 )
-                let glowRect = dotRect.insetBy(dx: -1.5, dy: -1.5)
-                dotColor.withAlphaComponent(0.34).setFill()
-                NSBezierPath(ovalIn: glowRect).fill()
-
-                dotColor.setFill()
-                NSBezierPath(ovalIn: dotRect).fill()
+                (countText as NSString).draw(in: textRect, withAttributes: attrs)
             }
+
             return true
         }
-        image.isTemplate = !hasBadge
+        image.isTemplate = false
         return image
+    }
+}
+
+private struct MenuBarStatusLabel: View {
+    @Bindable var model: AgentMeterModel
+
+    var body: some View {
+        let visualState = model.menuBarVisualState
+        Image(nsImage: AgentMeterApp.menuBarIcon(visualState: visualState))
+            .accessibilityLabel(AgentMeterApp.accessibilityLabel(for: visualState, language: model.language))
+            .help(model.menuTitle())
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelController: AgentMeterPanelController?
+    private var miniConfirmController: AgentMiniConfirmController?
+    private var pipController: AgentPiPController?
     private var workspaceObservers: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -249,7 +392,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.setActivationPolicy(isPreview ? .regular : .accessory)
         AgentMeterModel.shared.applyAppearance()
         panelController = AgentMeterPanelController(model: AgentMeterModel.shared)
+        miniConfirmController = AgentMiniConfirmController(model: AgentMeterModel.shared)
+        pipController = AgentPiPController(model: AgentMeterModel.shared)
+        AgentMeterModel.shared.onMenuBarStateChanged = { [weak self] in
+            self?.syncMenuBarButtons()
+        }
+        AgentMeterModel.shared.onMiniConfirmStateChanged = { [weak self] in
+            self?.miniConfirmController?.syncWithModel()
+        }
+        AgentMeterModel.shared.onPiPStateChanged = { [weak self] in
+            self?.pipController?.syncWithModel()
+        }
         AgentMeterModel.shared.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.syncMenuBarButtons()
+        }
 
         GlobalHotKeyManager.shared.onTogglePanel = { [weak self] in
             self?.togglePanel()
@@ -279,6 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func openPanel() {
         DispatchQueue.main.async { [weak self] in
+            self?.miniConfirmController?.hide(animated: false)
             NSApplication.shared.activate(ignoringOtherApps: true)
             for window in NSApplication.shared.windows where window.isVisible {
                 if let button = Self.statusButton(in: window.contentView) {
@@ -287,7 +445,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         NSApplication.shared.activate(ignoringOtherApps: true)
                         for win in NSApplication.shared.windows where win.isVisible {
                             let className = NSStringFromClass(type(of: win))
-                            if !className.contains("StatusBar") {
+                            if !className.contains("StatusBar") && !className.contains("MiniConfirm") && !className.contains("PiPWindow") {
                                 win.makeKey()
                             }
                         }
@@ -305,18 +463,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let hasVisibleMenuWindow = NSApplication.shared.windows.contains { window in
                 guard window.isVisible else { return false }
                 let className = NSStringFromClass(type(of: window))
-                return !className.contains("StatusBar")
+                return !className.contains("StatusBar") && !className.contains("MiniConfirm") && !className.contains("PiPWindow")
             }
             if hasVisibleMenuWindow || AgentMeterModel.shared.isPanelOpen {
                 for window in NSApplication.shared.windows where window.isVisible {
                     let className = NSStringFromClass(type(of: window))
-                    if className.contains("StatusBar") { continue }
+                    if className.contains("StatusBar") || className.contains("MiniConfirm") || className.contains("PiPWindow") { continue }
                     window.orderOut(nil)
                 }
                 self.panelController?.stop()
                 AgentMeterModel.shared.panelDidClose()
             } else {
                 self.openPanel()
+            }
+        }
+    }
+
+    func syncMenuBarButtons() {
+        let model = AgentMeterModel.shared
+        let state = model.menuBarVisualState
+        let icon = AgentMeterApp.menuBarIcon(visualState: state)
+        let title = model.menuTitle()
+        for window in NSApplication.shared.windows {
+            let className = NSStringFromClass(type(of: window))
+            guard className.contains("StatusBar") else { continue }
+            if let button = Self.statusButton(in: window.contentView) {
+                if button.image != nil {
+                    button.image = icon
+                }
+                button.toolTip = title
+                button.needsDisplay = true
             }
         }
     }
@@ -341,6 +517,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         GlobalHotKeyManager.shared.unregisterHotKeys()
+        AgentMeterModel.shared.releaseKeepAwakeAssertion()
+        pipController?.stop()
+        miniConfirmController?.stop()
         panelController?.stop()
         for observer in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
     }
